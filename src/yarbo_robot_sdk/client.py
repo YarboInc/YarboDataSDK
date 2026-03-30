@@ -76,9 +76,9 @@ class YarboClient:
         """Login with username and password (password is RSA-encrypted internally)."""
         self._auth.login(username, password)
 
-    def restore_session(self, token: str, refresh_token: str) -> None:
+    def restore_session(self, username: str, token: str, refresh_token: str) -> None:
         """Restore a previous session from saved tokens (no login needed)."""
-        self._auth.restore(token, refresh_token)
+        self._auth.restore(username, token, refresh_token)
 
     @property
     def token(self) -> str | None:

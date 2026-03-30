@@ -53,7 +53,7 @@ class TestRestoreSession:
 
     @responses.activate
     def test_restore_and_use(self, client, api_base_url, mock_devices_response):
-        client.restore_session(token="saved_token", refresh_token="saved_refresh")
+        client.restore_session(username="user@test.com", token="saved_token", refresh_token="saved_refresh")
         assert client.token == "saved_token"
         assert client.refresh_token == "saved_refresh"
 

@@ -140,7 +140,8 @@ class TestRestoreSession:
     """TC-021: restore_session."""
 
     def test_restore_sets_tokens(self, auth):
-        auth.restore("saved_token", "saved_refresh")
+        auth.restore("user@test.com", "saved_token", "saved_refresh")
+        assert auth.username == "user@test.com"
         assert auth.token == "saved_token"
         assert auth.refresh_token == "saved_refresh"
         assert auth.is_authenticated is True

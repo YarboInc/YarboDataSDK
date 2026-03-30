@@ -21,6 +21,7 @@ class AuthManager:
     def __init__(self, api_base_url: str, rsa_public_key: str):
         self._api_base_url = api_base_url
         self._rsa_public_key = rsa_public_key
+        self._username: str | None = None
         self._token: str | None = None
         self._refresh_token: str | None = None
 
@@ -48,6 +49,7 @@ class AuthManager:
 
         data = resp.json()
         payload = data.get("data", data)  # Support {"code":0,"data":{...}} wrapper
+        self._username = username.lower()
         self._token = payload.get("accessToken") or payload.get("token")
         self._refresh_token = payload.get("refreshToken") or payload.get("refresh_token")
 
@@ -77,10 +79,15 @@ class AuthManager:
         if new_refresh:
             self._refresh_token = new_refresh  # Auth0 Refresh Token Rotation
 
-    def restore(self, token: str, refresh_token: str) -> None:
+    def restore(self, username: str, token: str, refresh_token: str) -> None:
         """Restore a previous session from saved tokens."""
+        self._username = username.lower()
         self._token = token
         self._refresh_token = refresh_token
+
+    @property
+    def username(self) -> str | None:
+        return self._username
 
     @property
     def token(self) -> str | None:

@@ -12,7 +12,7 @@ from yarbo_robot_sdk.mqtt_client import MqttClient
 @pytest.fixture
 def auth_manager(api_base_url, rsa_key_pair, mock_tokens):
     auth = AuthManager(api_base_url, rsa_key_pair["public_key"])
-    auth.restore(mock_tokens["token"], mock_tokens["refresh_token"])
+    auth.restore("user@test.com", mock_tokens["token"], mock_tokens["refresh_token"])
     return auth
 
 
@@ -30,13 +30,18 @@ class TestMqttConnect:
     """TC-010, TC-011."""
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
-    def test_connect_uses_token_as_username(self, MockClient, mqtt_client, mock_tokens):
-        """TC-010: JWT auth via username field."""
+    def test_connect_uses_email_and_token(self, MockClient, mqtt_client, mock_tokens):
+        """TC-010: HTTP AUTH via username=email, password=JWT."""
         mock_instance = MockClient.return_value
         mqtt_client.connect()
 
+        # Verify client_id starts with yarbo-ha- prefix
+        call_kwargs = MockClient.call_args
+        client_id = call_kwargs.kwargs.get("client_id") or call_kwargs[1].get("client_id", "")
+        assert client_id.startswith("yarbo-ha-"), f"client_id should start with 'yarbo-ha-', got '{client_id}'"
+
         mock_instance.username_pw_set.assert_called_once_with(
-            username=mock_tokens["token"], password=""
+            username="user@test.com", password=mock_tokens["token"]
         )
         mock_instance.connect.assert_called_once_with(
             "test-mqtt.yarbo.com", 8883, 60

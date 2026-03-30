@@ -1,7 +1,11 @@
 """MQTT client — connection, subscription, callback dispatch, auto-reconnect."""
 
+import logging
+import uuid
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import paho.mqtt.client as mqtt
 
@@ -9,9 +13,11 @@ from yarbo_robot_sdk.auth import AuthManager
 from yarbo_robot_sdk.config import MQTT_KEEPALIVE
 from yarbo_robot_sdk.exceptions import MqttConnectionError
 
+SDK_CLIENTID_PREFIX = "yarbo-ha-"
+
 
 class MqttClient:
-    """Manages MQTT connection using JWT (token as username) for EMQX auth."""
+    """Manages MQTT connection using HTTP AUTH (username=email, password=JWT)."""
 
     def __init__(
         self,
@@ -31,17 +37,19 @@ class MqttClient:
         self._connected = False
 
     def connect(self) -> None:
-        """Establish MQTT connection. username=token, password=empty."""
+        """Establish MQTT connection. username=email, password=JWT token."""
         if not self._auth.is_authenticated:
             raise MqttConnectionError("Not authenticated. Call login() first.")
 
         try:
+            client_id = f"{SDK_CLIENTID_PREFIX}{uuid.uuid4().hex[:12]}"
             self._client = mqtt.Client(
+                client_id=client_id,
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             )
             self._client.username_pw_set(
-                username=self._auth.token,
-                password="",
+                username=self._auth.username,
+                password=self._auth.token,
             )
 
             if self._use_tls:
@@ -109,8 +117,11 @@ class MqttClient:
 
         if success:
             self._connected = True
+            logger.info(f"MQTT connected (rc={rc})")
             for topic in self._callbacks:
                 client.subscribe(topic)
+        else:
+            logger.warning(f"MQTT connect failed (rc={rc})")
 
     def _on_disconnect(
         self,
@@ -121,11 +132,12 @@ class MqttClient:
         properties: Any = None,
     ) -> None:
         self._connected = False
+        logger.warning(f"MQTT disconnected (rc={rc})")
         # rc != 0 means unexpected disconnect (possibly token expired, kicked by EMQX)
         if rc != 0:
             try:
                 self._auth.refresh()
-                client.username_pw_set(username=self._auth.token, password="")
+                client.username_pw_set(username=self._auth.username, password=self._auth.token)
                 # paho will auto-reconnect via loop_start background thread
             except Exception:
                 pass  # Refresh failed; will retry on next reconnect attempt

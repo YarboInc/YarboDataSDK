@@ -11,7 +11,7 @@ from yarbo_robot_sdk.rest_client import RestClient
 @pytest.fixture
 def rest_client(api_base_url, rsa_key_pair, mock_tokens):
     auth = AuthManager(api_base_url, rsa_key_pair["public_key"])
-    auth.restore(mock_tokens["token"], mock_tokens["refresh_token"])
+    auth.restore("user@test.com", mock_tokens["token"], mock_tokens["refresh_token"])
     return RestClient(auth, api_base_url), auth
 
 
