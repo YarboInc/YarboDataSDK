@@ -7,6 +7,11 @@
       "name": "device_msg",
       "template": "snowbot/{sn}/device/DeviceMSG",
       "description": "设备实时信息"
+    },
+    {
+      "name": "heart_beat",
+      "template": "snowbot/{sn}/device/heart_beat",
+      "description": "机器心跳状态"
     }
   ],
   "apis": [
@@ -15,6 +20,27 @@
       "method": "GET",
       "path_template": "/devices/{sn}",
       "description": "设备详情"
+    }
+  ],
+  "control_topics": [
+    {
+      "name": "set_working_state",
+      "template": "snowbot/{sn}/app/set_working_state",
+      "description": "设置机器工作状态"
+    }
+  ],
+  "control_fields": [
+    {
+      "path": "HeartBeatMSG.working_state",
+      "name": "Working State",
+      "entity_type": "select",
+      "command_topic": "set_working_state",
+      "command_key": "state",
+      "options": ["standby", "working"],
+      "value_map": {"standby": 0, "working": 1},
+      "state_value_map": {"0": "standby", "1": "working"},
+      "icon": "mdi:play-pause",
+      "category": "control"
     }
   ],
   "fields": [
@@ -92,6 +118,18 @@
       "entity_type": "sensor",
       "icon": "mdi:access-point",
       "enabled_by_default": false,
+      "category": "status"
+    },
+    {
+      "path": "HeartBeatMSG.working_state",
+      "name": "Heart Beat State",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:heart-pulse",
+      "value_map": {
+        "0": "standby",
+        "1": "working"
+      },
       "category": "status"
     },
     {

@@ -28,6 +28,31 @@ def resolve_device_msg_topic(sn: str, type_id: str) -> str:
     raise YarboSDKError(f"No device_msg topic defined for device type: {type_id}")
 
 
+def resolve_topic_by_name(sn: str, type_id: str, topic_name: str) -> str:
+    """Look up a topic template by name for a device type and substitute the SN.
+
+    Args:
+        sn: Device serial number.
+        type_id: Device type ID.
+        topic_name: The topic name to look up (e.g. "heart_beat", "device_msg").
+
+    Returns:
+        Resolved topic string with {sn} substituted.
+
+    Raises:
+        YarboSDKError: If device type is unknown or topic name is not found.
+    """
+    device_type = get_device_type(type_id)
+    if device_type is None:
+        raise YarboSDKError(f"Unknown device type: {type_id}")
+    for topic in device_type.topics:
+        if topic.name == topic_name:
+            return topic.template.replace("{sn}", sn)
+    raise YarboSDKError(
+        f"No topic '{topic_name}' defined for device type: {type_id}"
+    )
+
+
 def extract_field(data: dict, field_path: str) -> Any:
     """Extract a value from a nested dict using dot-separated path.
 

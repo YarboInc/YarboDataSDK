@@ -6,10 +6,26 @@ from typing import Any
 
 from yarbo_robot_sdk import endpoints
 from yarbo_robot_sdk.auth import AuthManager
+from yarbo_robot_sdk.codec import (
+    decode_mqtt_payload,
+    encode_mqtt_payload,
+    parse_version,
+    should_compress,
+)
 from yarbo_robot_sdk.config import DEFAULT_API_BASE_URL
 from yarbo_robot_sdk.config_provider import ConfigProvider
-from yarbo_robot_sdk.device_helpers import extract_field, resolve_device_msg_topic
-from yarbo_robot_sdk.device_registry import DeviceType, get_device_type, list_device_types
+from yarbo_robot_sdk.device_helpers import (
+    extract_field,
+    resolve_device_msg_topic,
+    resolve_topic_by_name,
+)
+from yarbo_robot_sdk.device_registry import (
+    DeviceType,
+    get_control_field_definitions,
+    get_device_type,
+    list_device_types,
+    resolve_control_topic,
+)
 from yarbo_robot_sdk.exceptions import AuthenticationError, YarboSDKError
 from yarbo_robot_sdk.models import Device
 from yarbo_robot_sdk.mqtt_client import MqttClient
@@ -69,6 +85,9 @@ class YarboClient:
         self._auth = AuthManager(_api_base, _rsa_key)
         self._rest = RestClient(self._auth, _api_base)
         self._mqtt: MqttClient | None = None
+
+        # Per-device firmware version cache: {sn: (major, minor, patch)}
+        self._firmware_versions: dict[str, tuple[int, int, int]] = {}
 
     # --- Auth ---
 
@@ -167,14 +186,24 @@ class YarboClient:
         """Subscribe to device real-time message (snowbot/{sn}/device/DeviceMSG).
 
         Callback receives (topic: str, data: dict) where data is the parsed JSON payload.
+        Automatically decompresses zlib-compressed messages and falls back to plaintext.
+        Also extracts and caches the device firmware version from the 'version' field.
         """
         topic = resolve_device_msg_topic(sn, type_id)
 
         def _wrapper(topic_str: str, payload: bytes) -> None:
             try:
-                data = json.loads(payload.decode())
-            except (json.JSONDecodeError, UnicodeDecodeError):
+                data = decode_mqtt_payload(payload)
+            except Exception:
                 data = {"_raw": payload.decode(errors="replace")}
+                callback(topic_str, data)
+                return
+            # Auto-extract and cache firmware version
+            version_str = data.get("version", "")
+            if version_str:
+                parsed = parse_version(str(version_str))
+                if parsed is not None:
+                    self._firmware_versions[sn] = parsed
             callback(topic_str, data)
 
         self.mqtt_subscribe(topic, _wrapper)
@@ -183,6 +212,71 @@ class YarboClient:
         """Unsubscribe from device real-time message."""
         topic = resolve_device_msg_topic(sn, type_id)
         self.mqtt_unsubscribe(topic)
+
+    def subscribe_heart_beat(
+        self,
+        sn: str,
+        type_id: str,
+        callback: Callable[[str, dict], Any],
+    ) -> None:
+        """Subscribe to device heart beat topic (snowbot/{sn}/device/heart_beat).
+
+        Callback receives (topic: str, data: dict) where data is the parsed payload,
+        e.g. {"working_state": 0}. Automatically handles zlib-compressed messages.
+        """
+        topic = resolve_topic_by_name(sn, type_id, "heart_beat")
+
+        def _wrapper(topic_str: str, payload: bytes) -> None:
+            try:
+                data = decode_mqtt_payload(payload)
+            except Exception:
+                data = {"_raw": payload.decode(errors="replace")}
+            callback(topic_str, data)
+
+        self.mqtt_subscribe(topic, _wrapper)
+
+    def mqtt_publish_command(
+        self,
+        sn: str,
+        type_id: str,
+        command_topic_name: str,
+        payload: dict,
+    ) -> None:
+        """Publish a command to a device control topic.
+
+        Automatically compresses the payload with zlib if the device firmware
+        version is >= 3.9.0; otherwise sends plaintext JSON.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            command_topic_name: Name of the control topic (from control_topics[].name).
+            payload: Command payload dict to send.
+
+        Raises:
+            YarboSDKError: If MQTT is not connected or the topic name is unknown.
+        """
+        if self._mqtt is None:
+            raise YarboSDKError("MQTT not connected. Call mqtt_connect() first.")
+
+        topic = resolve_control_topic(sn, type_id, command_topic_name)
+        fw = self._firmware_versions.get(sn)
+        if should_compress(fw):
+            encoded = encode_mqtt_payload(payload)
+        else:
+            encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+        self._mqtt.publish(topic, encoded)
+
+    def set_working_state(self, sn: str, type_id: str, state: int) -> None:
+        """Set device working state.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            state: 0 = standby, 1 = working.
+        """
+        self.mqtt_publish_command(sn, type_id, "set_working_state", {"state": state})
 
     # --- Device Registry ---
 

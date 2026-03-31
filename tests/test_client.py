@@ -73,12 +73,12 @@ class TestDeviceRegistry:
 
     def test_list_device_types(self, client):
         types = client.list_device_types()
-        assert len(types) >= 2
+        assert len(types) >= 1
 
     def test_get_device_type(self, client):
-        dt = client.get_device_type("mower")
+        dt = client.get_device_type("yarbo_Y")
         assert dt is not None
-        assert dt.type_id == "mower"
+        assert dt.type_id == "yarbo_Y"
 
 
 class TestFullFlow:
@@ -117,8 +117,11 @@ class TestBoundary:
     """Boundary cases."""
 
     def test_missing_api_base_url(self, rsa_key_pair):
-        with pytest.raises(YarboSDKError, match="api_base_url is required"):
-            YarboClient(rsa_public_key=rsa_key_pair["public_key"])
+        """No explicit api_base_url uses DEFAULT_API_BASE_URL — no error raised."""
+        # Client falls back to DEFAULT_API_BASE_URL when api_base_url is omitted
+        # rsa key is provided so construction succeeds
+        client = YarboClient(rsa_public_key=rsa_key_pair["public_key"])
+        assert client is not None
 
     def test_missing_rsa_key_without_cloud(self):
         """No rsa key and no cloud config → error."""
@@ -128,3 +131,176 @@ class TestBoundary:
     def test_mqtt_subscribe_before_connect(self, client):
         with pytest.raises(YarboSDKError, match="MQTT not connected"):
             client.mqtt_subscribe("topic", MagicMock())
+
+
+@pytest.fixture
+def authed_client(client, mock_tokens):
+    """YarboClient with a restored session (authenticated)."""
+    client.restore_session("user@test.com", mock_tokens["token"], mock_tokens["refresh_token"])
+    return client
+
+
+class TestSubscribeDeviceMessage:
+    """TC-009: subscribe_device_message decodes payload and caches firmware version."""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_compressed_payload_decoded(self, MockClient, authed_client):
+        """TC-009a: compressed payload is decoded and passed to callback as dict."""
+        import json, zlib
+        authed_client.mqtt_connect()
+        received = []
+        authed_client.subscribe_device_message("SN001", "yarbo_Y", lambda t, d: received.append(d))
+
+        payload_dict = {"BatteryMSG": {"capacity": 75}, "version": "3.9.1"}
+        compressed = zlib.compress(json.dumps(payload_dict).encode())
+        msg = MagicMock()
+        msg.topic = "snowbot/SN001/device/DeviceMSG"
+        msg.payload = compressed
+        authed_client._mqtt._on_message(None, None, msg)
+
+        assert len(received) == 1
+        assert received[0]["BatteryMSG"]["capacity"] == 75
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_firmware_version_cached(self, MockClient, authed_client):
+        """TC-009b: firmware version from 'version' field is cached per SN."""
+        import json, zlib
+        authed_client.mqtt_connect()
+        authed_client.subscribe_device_message("SN001", "yarbo_Y", lambda t, d: None)
+
+        payload_dict = {"version": "3.9.1"}
+        compressed = zlib.compress(json.dumps(payload_dict).encode())
+        msg = MagicMock()
+        msg.topic = "snowbot/SN001/device/DeviceMSG"
+        msg.payload = compressed
+        authed_client._mqtt._on_message(None, None, msg)
+
+        assert authed_client._firmware_versions.get("SN001") == (3, 9, 1)
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_plaintext_payload_decoded(self, MockClient, authed_client):
+        """TC-009c: plaintext JSON fallback also works."""
+        import json
+        authed_client.mqtt_connect()
+        received = []
+        authed_client.subscribe_device_message("SN002", "yarbo_Y", lambda t, d: received.append(d))
+
+        payload_dict = {"StateMSG": {"working_state": 0}, "version": "3.8.0"}
+        msg = MagicMock()
+        msg.topic = "snowbot/SN002/device/DeviceMSG"
+        msg.payload = json.dumps(payload_dict).encode()
+        authed_client._mqtt._on_message(None, None, msg)
+
+        assert received[0]["StateMSG"]["working_state"] == 0
+        assert authed_client._firmware_versions.get("SN002") == (3, 8, 0)
+
+
+class TestSubscribeHeartBeat:
+    """TC-010: subscribe_heart_beat decodes payload and passes to callback."""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_heart_beat_decoded(self, MockClient, authed_client):
+        """TC-010: heart beat payload decoded to dict and passed to callback."""
+        import json
+        authed_client.mqtt_connect()
+        received = []
+        authed_client.subscribe_heart_beat("SN001", "yarbo_Y", lambda t, d: received.append(d))
+
+        payload = json.dumps({"working_state": 1}).encode()
+        msg = MagicMock()
+        msg.topic = "snowbot/SN001/device/heart_beat"
+        msg.payload = payload
+        authed_client._mqtt._on_message(None, None, msg)
+
+        assert received[0]["working_state"] == 1
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_heart_beat_compressed_decoded(self, MockClient, authed_client):
+        """TC-010b: compressed heart beat payload decoded correctly."""
+        import json, zlib
+        authed_client.mqtt_connect()
+        received = []
+        authed_client.subscribe_heart_beat("SN001", "yarbo_Y", lambda t, d: received.append(d))
+
+        payload = zlib.compress(json.dumps({"working_state": 0}).encode())
+        msg = MagicMock()
+        msg.topic = "snowbot/SN001/device/heart_beat"
+        msg.payload = payload
+        authed_client._mqtt._on_message(None, None, msg)
+
+        assert received[0]["working_state"] == 0
+
+
+class TestMqttPublishCommand:
+    """TC-011, TC-012: mqtt_publish_command sends correct payload."""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_publish_plaintext_when_no_fw_version(self, MockClient, authed_client):
+        """TC-011: no fw version → plaintext JSON."""
+        import json
+        mock_instance = MockClient.return_value
+        authed_client.mqtt_connect()
+
+        authed_client.mqtt_publish_command("SN001", "yarbo_Y", "set_working_state", {"state": 0})
+
+        call_args = mock_instance.publish.call_args
+        topic = call_args[0][0]
+        payload_bytes = call_args[0][1]
+        assert topic == "snowbot/SN001/app/set_working_state"
+        assert json.loads(payload_bytes) == {"state": 0}
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_publish_compressed_when_fw_above_threshold(self, MockClient, authed_client):
+        """TC-012: fw >= 3.9.0 → zlib-compressed payload."""
+        import zlib
+        mock_instance = MockClient.return_value
+        authed_client.mqtt_connect()
+        authed_client._firmware_versions["SN001"] = (3, 9, 0)
+
+        authed_client.mqtt_publish_command("SN001", "yarbo_Y", "set_working_state", {"state": 1})
+
+        call_args = mock_instance.publish.call_args
+        payload_bytes = call_args[0][1]
+        decompressed = zlib.decompress(payload_bytes)
+        import json
+        assert json.loads(decompressed) == {"state": 1}
+
+    def test_publish_command_without_mqtt_connect_raises(self, client):
+        """TC-011b: MQTT not connected raises YarboSDKError."""
+        with pytest.raises(YarboSDKError, match="MQTT not connected"):
+            client.mqtt_publish_command("SN001", "yarbo_Y", "set_working_state", {"state": 0})
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_publish_unknown_topic_raises(self, MockClient, authed_client):
+        """TC-011c: unknown command_topic_name raises YarboSDKError."""
+        authed_client.mqtt_connect()
+        with pytest.raises(YarboSDKError):
+            authed_client.mqtt_publish_command("SN001", "yarbo_Y", "nonexistent_topic", {"x": 1})
+
+
+class TestSetWorkingState:
+    """TC-013: set_working_state is a convenience wrapper."""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_set_working_state_standby(self, MockClient, authed_client):
+        """TC-013a: set_working_state(0) sends {"state": 0}."""
+        import json
+        mock_instance = MockClient.return_value
+        authed_client.mqtt_connect()
+        authed_client.set_working_state("SN001", "yarbo_Y", 0)
+
+        call_args = mock_instance.publish.call_args
+        payload_bytes = call_args[0][1]
+        assert json.loads(payload_bytes) == {"state": 0}
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_set_working_state_working(self, MockClient, authed_client):
+        """TC-013b: set_working_state(1) sends {"state": 1}."""
+        import json
+        mock_instance = MockClient.return_value
+        authed_client.mqtt_connect()
+        authed_client.set_working_state("SN001", "yarbo_Y", 1)
+
+        call_args = mock_instance.publish.call_args
+        payload_bytes = call_args[0][1]
+        assert json.loads(payload_bytes) == {"state": 1}

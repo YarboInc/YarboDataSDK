@@ -107,6 +107,47 @@ class TestDeviceInfo:
         assert SAMPLE_DEVICE.type_id == "snowbot"
 
 
+class TestHeartBeatMerge:
+    """TC-038: DeviceMSG update must not overwrite HeartBeatMSG data."""
+
+    def test_update_preserves_heart_beat(self):
+        """Simulates the coordinator data merge fix: update() not replace."""
+        coordinator_data = {}
+        sn = "SN001"
+
+        # 1. Heart beat arrives first
+        coordinator_data.setdefault(sn, {})
+        coordinator_data[sn]["HeartBeatMSG"] = {"working_state": 1}
+
+        # 2. DeviceMSG arrives — should NOT wipe HeartBeatMSG
+        device_msg = {"BatteryMSG": {"capacity": 80}, "StateMSG": {"working_state": 0}}
+        coordinator_data.setdefault(sn, {})
+        coordinator_data[sn].update(device_msg)  # fixed: update not replace
+
+        assert coordinator_data[sn]["HeartBeatMSG"] == {"working_state": 1}
+        assert coordinator_data[sn]["BatteryMSG"]["capacity"] == 80
+
+    def test_heart_beat_extract_after_device_msg(self):
+        """HeartBeatMSG.working_state is readable after DeviceMSG update."""
+        coordinator_data = {"SN001": {}}
+        coordinator_data["SN001"]["HeartBeatMSG"] = {"working_state": 0}
+        coordinator_data["SN001"].update({"BatteryMSG": {"capacity": 100}})
+
+        assert extract_field(coordinator_data["SN001"], "HeartBeatMSG.working_state") == 0
+
+    def test_state_value_map_working(self):
+        """state_value_map correctly maps int 1 → 'working'."""
+        state_value_map = {"0": "standby", "1": "working"}
+        raw = 1
+        assert state_value_map.get(str(raw)) == "working"
+
+    def test_state_value_map_standby(self):
+        """state_value_map correctly maps int 0 → 'standby'."""
+        state_value_map = {"0": "standby", "1": "working"}
+        raw = 0
+        assert state_value_map.get(str(raw)) == "standby"
+
+
 class TestMultiDeviceSupport:
     """TC-037: Multiple devices supported."""
 

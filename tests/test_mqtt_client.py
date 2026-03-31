@@ -170,3 +170,23 @@ class TestMqttReconnect:
         mqtt_client._on_connect(mock_instance, None, None, 0)
 
         assert mock_instance.subscribe.call_count == 2
+
+
+class TestMqttPublish:
+    """TC-007, TC-008."""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_publish_success(self, MockClient, mqtt_client):
+        """TC-007: publish calls paho publish with correct topic, payload, qos."""
+        mock_instance = MockClient.return_value
+        mqtt_client.connect()
+        payload = b'{"state":0}'
+        mqtt_client.publish("snowbot/SN123/app/set_working_state", payload, qos=0)
+        mock_instance.publish.assert_called_once_with(
+            "snowbot/SN123/app/set_working_state", payload, 0
+        )
+
+    def test_publish_without_connect_raises(self, mqtt_client):
+        """TC-008: publish before connect raises MqttConnectionError."""
+        with pytest.raises(MqttConnectionError):
+            mqtt_client.publish("snowbot/SN123/app/set_working_state", b"data")

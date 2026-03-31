@@ -10,11 +10,14 @@ from yarbo_robot_sdk.device_registry import (
     DeviceRegistryError,
     DeviceType,
     _load_device_type,
+    get_control_field_definitions,
     get_device_type,
     get_field_definitions,
     list_device_types,
+    resolve_control_topic,
 )
-from yarbo_robot_sdk.models import FieldDefinition
+from yarbo_robot_sdk.exceptions import YarboSDKError
+from yarbo_robot_sdk.models import ControlFieldDefinition, FieldDefinition
 
 
 # ---- TC-001: JSON config files load correctly ----
@@ -266,3 +269,125 @@ class TestExtractFieldWithSample:
     def test_nonexistent_path_returns_none(self):
         from yarbo_robot_sdk.device_helpers import extract_field
         assert extract_field(MQTT_SAMPLE, "NotExist.field") is None
+
+
+# ---- TC-016: control_topics parsed correctly ----
+
+class TestControlTopicsParsed:
+    """TC-016."""
+
+    def test_yarbo_Y_has_control_topics(self):
+        dt = get_device_type("yarbo_Y")
+        assert len(dt.control_topics) >= 1
+
+    def test_set_working_state_topic_name(self):
+        dt = get_device_type("yarbo_Y")
+        names = [ct.name for ct in dt.control_topics]
+        assert "set_working_state" in names
+
+    def test_set_working_state_template(self):
+        dt = get_device_type("yarbo_Y")
+        ct = next(c for c in dt.control_topics if c.name == "set_working_state")
+        assert "{sn}" in ct.template
+        assert "set_working_state" in ct.template
+
+
+# ---- TC-017: control_fields parsed correctly ----
+
+class TestControlFieldsParsed:
+    """TC-017."""
+
+    def test_yarbo_Y_has_control_fields(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        assert len(fields) >= 1
+
+    def test_control_field_is_dataclass(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        assert all(isinstance(f, ControlFieldDefinition) for f in fields)
+
+    def test_working_state_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        ws = next(f for f in fields if f.path == "HeartBeatMSG.working_state")
+        assert ws.entity_type == "select"
+        assert ws.command_topic == "set_working_state"
+        assert ws.command_key == "state"
+        assert "standby" in ws.options
+        assert "working" in ws.options
+        assert ws.value_map["standby"] == 0
+        assert ws.value_map["working"] == 1
+        assert ws.state_value_map["0"] == "standby"
+        assert ws.state_value_map["1"] == "working"
+
+    def test_unknown_type_returns_empty(self):
+        assert get_control_field_definitions("nonexistent") == []
+
+
+# ---- TC-018: resolve_control_topic ----
+
+class TestResolveControlTopic:
+    """TC-018."""
+
+    def test_resolve_set_working_state(self):
+        topic = resolve_control_topic("SN123", "yarbo_Y", "set_working_state")
+        assert topic == "snowbot/SN123/app/set_working_state"
+
+    def test_sn_substituted(self):
+        topic = resolve_control_topic("MY_DEVICE", "yarbo_Y", "set_working_state")
+        assert "MY_DEVICE" in topic
+        assert "{sn}" not in topic
+
+    def test_unknown_device_type_raises(self):
+        with pytest.raises(YarboSDKError, match="Unknown device type"):
+            resolve_control_topic("SN123", "nonexistent", "set_working_state")
+
+    def test_unknown_topic_name_raises(self):
+        with pytest.raises(YarboSDKError, match="No control topic"):
+            resolve_control_topic("SN123", "yarbo_Y", "nonexistent_command")
+
+
+# ---- TC-019: control_field missing required key raises ----
+
+class TestControlFieldValidation:
+    """TC-019."""
+
+    def _make_valid_control_field(self):
+        return {
+            "path": "HeartBeatMSG.working_state",
+            "name": "Working State",
+            "entity_type": "select",
+            "command_topic": "set_working_state",
+            "command_key": "state",
+            "options": ["standby", "working"],
+            "value_map": {"standby": 0, "working": 1},
+            "state_value_map": {"0": "standby", "1": "working"},
+        }
+
+    def test_missing_command_topic_raises(self, tmp_path):
+        cf = self._make_valid_control_field()
+        del cf["command_topic"]
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text(json.dumps({
+            "type_id": "test", "name": "test", "control_fields": [cf]
+        }))
+        with pytest.raises(DeviceRegistryError, match="Missing required field 'command_topic'"):
+            _load_device_type(bad_json)
+
+    def test_missing_options_raises(self, tmp_path):
+        cf = self._make_valid_control_field()
+        del cf["options"]
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text(json.dumps({
+            "type_id": "test", "name": "test", "control_fields": [cf]
+        }))
+        with pytest.raises(DeviceRegistryError, match="Missing required field 'options'"):
+            _load_device_type(bad_json)
+
+    def test_invalid_entity_type_raises(self, tmp_path):
+        cf = self._make_valid_control_field()
+        cf["entity_type"] = "button"
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text(json.dumps({
+            "type_id": "test", "name": "test", "control_fields": [cf]
+        }))
+        with pytest.raises(DeviceRegistryError, match="Invalid entity_type"):
+            _load_device_type(bad_json)

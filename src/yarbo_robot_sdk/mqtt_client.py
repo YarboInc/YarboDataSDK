@@ -79,6 +79,21 @@ class MqttClient:
             self._client.subscribe(topic)
         self._callbacks[topic].append(callback)
 
+    def publish(self, topic: str, payload: bytes, qos: int = 0) -> None:
+        """Publish a message to an MQTT topic.
+
+        Args:
+            topic: MQTT topic string.
+            payload: Raw bytes to publish.
+            qos: Quality of service level (default 0 = AT_MOST_ONCE).
+
+        Raises:
+            MqttConnectionError: If not connected.
+        """
+        if self._client is None:
+            raise MqttConnectionError("MQTT not connected. Call mqtt_connect() first.")
+        self._client.publish(topic, payload, qos)
+
     def unsubscribe(self, topic: str) -> None:
         """Unsubscribe from a topic and remove all its callbacks."""
         if self._client is None:
