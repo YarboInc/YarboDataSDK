@@ -1,10 +1,24 @@
 """Device capability registry.
 
-Declares supported device types, their topics, APIs, status fields,
-and control commands. Add new device types to DEVICE_REGISTRY below.
+Loads device type definitions from JSON configuration files in the
+devices/ directory. Each JSON file defines one device type with its
+topics, APIs, and field definitions (including HA entity metadata).
+
+To add a new device type, create a new JSON file in devices/.
 """
 
+import json
+import logging
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from .models import FieldDefinition
+
+_LOGGER = logging.getLogger(__name__)
+
+DEVICES_DIR = Path(__file__).parent / "devices"
+
+VALID_ENTITY_TYPES = {"sensor", "binary_sensor", "device_tracker"}
 
 
 @dataclass
@@ -34,61 +48,123 @@ class DeviceType:
     name: str
     topics: list[TopicDefinition] = field(default_factory=list)
     apis: list[ApiDefinition] = field(default_factory=list)
-    status_fields: list[str] = field(default_factory=list)
+    status_fields: list[FieldDefinition] = field(default_factory=list)
     control_commands: list[str] = field(default_factory=list)
 
 
-# ==========================================================================
-# Device capability registry — add new device types here
-# ==========================================================================
-DEVICE_REGISTRY: dict[str, DeviceType] = {
-    "mower": DeviceType(
-        type_id="mower",
-        name="割草机器人",
-        topics=[
-            TopicDefinition("device_msg", "snowbot/{sn}/device/DeviceMSG", "设备实时信息"),
-        ],
-        apis=[
-            ApiDefinition("device_detail", "GET", "/devices/{sn}", "设备详情"),
-        ],
-        status_fields=[
-            "BatteryMSG.capacity",
-            "BatteryMSG.status",
-            "StateMSG.working_state",
-            "StateMSG.charging_status",
-            "StateMSG.error_code",
-            "CombinedOdom.x",
-            "CombinedOdom.y",
-            "CombinedOdom.phi",
-        ],
-        control_commands=[],  # Phase 2
-    ),
-    "snowbot": DeviceType(
-        type_id="snowbot",
-        name="扫雪机器人",
-        topics=[
-            TopicDefinition("device_msg", "snowbot/{sn}/device/DeviceMSG", "设备实时信息"),
-        ],
-        apis=[
-            ApiDefinition("device_detail", "GET", "/devices/{sn}", "设备详情"),
-        ],
-        status_fields=[
-            "BatteryMSG.capacity",
-            "BatteryMSG.status",
-            "BatteryMSG.temp_err",
-            "StateMSG.working_state",
-            "StateMSG.charging_status",
-            "StateMSG.error_code",
-            "CombinedOdom.x",
-            "CombinedOdom.y",
-            "CombinedOdom.phi",
-            "RTKMSG.status",
-            "HeadMsg.head_type",
-            "HeadSerialMsg.head_sn",
-        ],
-        control_commands=[],  # Phase 2
-    ),
-}
+class DeviceRegistryError(Exception):
+    """Raised when a device JSON configuration is invalid."""
+
+
+def _parse_field(raw: dict, json_file: str) -> FieldDefinition:
+    """Parse a single field definition from JSON dict."""
+    required = ("path", "name", "entity_type")
+    for key in required:
+        if key not in raw:
+            raise DeviceRegistryError(
+                f"Missing required field '{key}' in field definition in {json_file}"
+            )
+
+    entity_type = raw["entity_type"]
+    if entity_type not in VALID_ENTITY_TYPES:
+        raise DeviceRegistryError(
+            f"Invalid entity_type '{entity_type}' in {json_file}. "
+            f"Must be one of {VALID_ENTITY_TYPES}"
+        )
+
+    return FieldDefinition(
+        path=raw["path"],
+        name=raw["name"],
+        entity_type=entity_type,
+        device_class=raw.get("device_class"),
+        unit=raw.get("unit"),
+        icon=raw.get("icon"),
+        value_map=raw.get("value_map"),
+        enabled_by_default=raw.get("enabled_by_default", True),
+        category=raw.get("category"),
+    )
+
+
+def _load_device_type(json_file: Path) -> DeviceType:
+    """Load a single device type from a JSON file."""
+    try:
+        data = json.loads(json_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise DeviceRegistryError(
+            f"Invalid JSON in {json_file.name}: {e}"
+        ) from e
+
+    filename = json_file.name
+
+    if "type_id" not in data:
+        raise DeviceRegistryError(f"Missing 'type_id' in {filename}")
+    if "name" not in data:
+        raise DeviceRegistryError(f"Missing 'name' in {filename}")
+
+    topics = [
+        TopicDefinition(
+            name=t["name"],
+            template=t["template"],
+            description=t.get("description", ""),
+        )
+        for t in data.get("topics", [])
+    ]
+
+    apis = [
+        ApiDefinition(
+            name=a["name"],
+            method=a["method"],
+            path_template=a["path_template"],
+            description=a.get("description", ""),
+        )
+        for a in data.get("apis", [])
+    ]
+
+    fields = [
+        _parse_field(f, filename)
+        for f in data.get("fields", [])
+    ]
+
+    return DeviceType(
+        type_id=data["type_id"],
+        name=data["name"],
+        topics=topics,
+        apis=apis,
+        status_fields=fields,
+        control_commands=data.get("control_commands", []),
+    )
+
+
+def _load_device_types() -> dict[str, DeviceType]:
+    """Scan devices/*.json and build the registry."""
+    registry: dict[str, DeviceType] = {}
+
+    if not DEVICES_DIR.exists():
+        _LOGGER.warning("Devices directory not found: %s", DEVICES_DIR)
+        return registry
+
+    for json_file in sorted(DEVICES_DIR.glob("*.json")):
+        try:
+            device_type = _load_device_type(json_file)
+            registry[device_type.type_id] = device_type
+            _LOGGER.debug(
+                "Loaded device type '%s' from %s (%d fields)",
+                device_type.type_id,
+                json_file.name,
+                len(device_type.status_fields),
+            )
+        except DeviceRegistryError:
+            raise
+        except Exception as e:
+            raise DeviceRegistryError(
+                f"Unexpected error loading {json_file.name}: {e}"
+            ) from e
+
+    return registry
+
+
+# Load registry on module import
+DEVICE_REGISTRY: dict[str, DeviceType] = _load_device_types()
 
 
 def get_device_type(type_id: str) -> DeviceType | None:
@@ -99,3 +175,14 @@ def get_device_type(type_id: str) -> DeviceType | None:
 def list_device_types() -> list[DeviceType]:
     """Return all registered device types."""
     return list(DEVICE_REGISTRY.values())
+
+
+def get_field_definitions(type_id: str) -> list[FieldDefinition]:
+    """Return field definitions for a device type.
+
+    Returns an empty list if the device type is not found.
+    """
+    device_type = DEVICE_REGISTRY.get(type_id)
+    if device_type is None:
+        return []
+    return device_type.status_fields

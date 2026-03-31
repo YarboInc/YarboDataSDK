@@ -1,0 +1,227 @@
+{
+  "version": "1.0",
+  "type_id": "yarbo_Y",
+  "name": "Yarbo Y Series",
+  "topics": [
+    {
+      "name": "device_msg",
+      "template": "snowbot/{sn}/device/DeviceMSG",
+      "description": "设备实时信息"
+    }
+  ],
+  "apis": [
+    {
+      "name": "device_detail",
+      "method": "GET",
+      "path_template": "/devices/{sn}",
+      "description": "设备详情"
+    }
+  ],
+  "fields": [
+    {
+      "path": "__device__.online",
+      "name": "Online",
+      "entity_type": "binary_sensor",
+      "device_class": "connectivity",
+      "category": "status"
+    },
+    {
+      "path": "BatteryMSG.capacity",
+      "name": "Battery",
+      "entity_type": "sensor",
+      "device_class": "battery",
+      "unit": "%",
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.status",
+      "name": "Battery Status",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:battery-heart-variant",
+      "value_map": {
+        "0": "unknown",
+        "1": "normal",
+        "2": "low",
+        "3": "critical"
+      },
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temp_err",
+      "name": "Battery Temp Error",
+      "entity_type": "binary_sensor",
+      "device_class": "problem",
+      "value_map": {"0": "false", "1": "true"},
+      "category": "battery"
+    },
+    {
+      "path": "StateMSG.charging_status",
+      "name": "Charging",
+      "entity_type": "binary_sensor",
+      "device_class": "battery_charging",
+      "value_map": {"0": "false", "1": "true"},
+      "category": "battery"
+    },
+    {
+      "path": "StateMSG.working_state",
+      "name": "Working State",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:state-machine",
+      "value_map": {
+        "0": "idle",
+        "1": "working",
+        "2": "paused",
+        "3": "error",
+        "4": "returning"
+      },
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.error_code",
+      "name": "Error Code",
+      "entity_type": "sensor",
+      "icon": "mdi:alert-circle-outline",
+      "category": "status"
+    },
+    {
+      "path": "base_status",
+      "name": "Base Status",
+      "entity_type": "sensor",
+      "icon": "mdi:access-point",
+      "enabled_by_default": false,
+      "category": "status"
+    },
+    {
+      "path": "CombinedOdom.x",
+      "name": "Position X",
+      "entity_type": "sensor",
+      "unit": "m",
+      "icon": "mdi:map-marker",
+      "enabled_by_default": false,
+      "category": "position"
+    },
+    {
+      "path": "CombinedOdom.y",
+      "name": "Position Y",
+      "entity_type": "sensor",
+      "unit": "m",
+      "icon": "mdi:map-marker",
+      "enabled_by_default": false,
+      "category": "position"
+    },
+    {
+      "path": "CombinedOdom.phi",
+      "name": "Heading",
+      "entity_type": "sensor",
+      "unit": "°",
+      "icon": "mdi:compass",
+      "enabled_by_default": false,
+      "category": "position"
+    },
+    {
+      "path": "combined_odom_confidence",
+      "name": "Position Confidence",
+      "entity_type": "sensor",
+      "icon": "mdi:crosshairs-gps",
+      "enabled_by_default": false,
+      "category": "position"
+    },
+    {
+      "path": "RTKMSG.status",
+      "name": "RTK Status",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:satellite-variant",
+      "value_map": {
+        "0": "no_fix",
+        "1": "single",
+        "2": "float",
+        "4": "fixed",
+        "5": "dead_reckoning"
+      },
+      "category": "rtk"
+    },
+    {
+      "path": "RTKMSG.heading_status",
+      "name": "RTK Heading Status",
+      "entity_type": "sensor",
+      "icon": "mdi:satellite-variant",
+      "enabled_by_default": false,
+      "category": "rtk"
+    },
+    {
+      "path": "rtcm_age",
+      "name": "RTCM Age",
+      "entity_type": "sensor",
+      "unit": "s",
+      "icon": "mdi:timer-outline",
+      "enabled_by_default": false,
+      "category": "rtk"
+    },
+    {
+      "path": "HeadMsg.head_type",
+      "name": "Head Type",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:toolbox",
+      "value_map": {
+        "0": "none",
+        "1": "snow_blower",
+        "2": "leaf_blower",
+        "3": "mower",
+        "4": "smart_cover"
+      },
+      "category": "head"
+    },
+    {
+      "path": "HeadSerialMsg.head_sn",
+      "name": "Head Serial Number",
+      "entity_type": "sensor",
+      "icon": "mdi:barcode",
+      "enabled_by_default": false,
+      "category": "head"
+    },
+    {
+      "path": "RunningStatusMSG.chute_angle",
+      "name": "Chute Angle",
+      "entity_type": "sensor",
+      "unit": "°",
+      "icon": "mdi:rotate-right",
+      "enabled_by_default": false,
+      "category": "head"
+    },
+    {
+      "path": "ultrasonic_msg.lf_dis",
+      "name": "Ultrasonic Left Front",
+      "entity_type": "sensor",
+      "device_class": "distance",
+      "unit": "mm",
+      "icon": "mdi:signal-distance-variant",
+      "enabled_by_default": false,
+      "category": "ultrasonic"
+    },
+    {
+      "path": "ultrasonic_msg.mt_dis",
+      "name": "Ultrasonic Middle",
+      "entity_type": "sensor",
+      "device_class": "distance",
+      "unit": "mm",
+      "icon": "mdi:signal-distance-variant",
+      "enabled_by_default": false,
+      "category": "ultrasonic"
+    },
+    {
+      "path": "ultrasonic_msg.rf_dis",
+      "name": "Ultrasonic Right Front",
+      "entity_type": "sensor",
+      "device_class": "distance",
+      "unit": "mm",
+      "icon": "mdi:signal-distance-variant",
+      "enabled_by_default": false,
+      "category": "ultrasonic"
+    }
+  ]
+}
