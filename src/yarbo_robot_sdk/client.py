@@ -15,17 +15,10 @@ from yarbo_robot_sdk.codec import (
 from yarbo_robot_sdk.config import DEFAULT_API_BASE_URL
 from yarbo_robot_sdk.config_provider import ConfigProvider
 from yarbo_robot_sdk.device_helpers import (
-    extract_field,
     resolve_device_msg_topic,
     resolve_topic_by_name,
 )
-from yarbo_robot_sdk.device_registry import (
-    DeviceType,
-    get_control_field_definitions,
-    get_device_type,
-    list_device_types,
-    resolve_control_topic,
-)
+from yarbo_robot_sdk.device_registry import resolve_control_topic
 from yarbo_robot_sdk.exceptions import AuthenticationError, YarboSDKError
 from yarbo_robot_sdk.models import Device
 from yarbo_robot_sdk.mqtt_client import MqttClient
@@ -158,25 +151,6 @@ class YarboClient:
 
     # --- High-level device methods ---
 
-    def get_device_status(self, sn: str) -> dict:
-        """Get full device status via REST API."""
-        return self._rest.get(endpoints.DEVICE_DETAIL.format(sn=sn))
-
-    def get_battery(self, sn: str) -> dict | None:
-        """Get battery info. Returns {'capacity': int, 'status': int, ...}."""
-        status = self.get_device_status(sn)
-        return extract_field(status, "BatteryMSG")
-
-    def get_position(self, sn: str) -> dict | None:
-        """Get device position. Returns {'x': float, 'y': float, 'phi': float}."""
-        status = self.get_device_status(sn)
-        return extract_field(status, "CombinedOdom")
-
-    def get_working_state(self, sn: str) -> int | None:
-        """Get working state enum value."""
-        status = self.get_device_status(sn)
-        return extract_field(status, "StateMSG.working_state")
-
     def subscribe_device_message(
         self,
         sn: str,
@@ -207,11 +181,6 @@ class YarboClient:
             callback(topic_str, data)
 
         self.mqtt_subscribe(topic, _wrapper)
-
-    def unsubscribe_device_message(self, sn: str, type_id: str) -> None:
-        """Unsubscribe from device real-time message."""
-        topic = resolve_device_msg_topic(sn, type_id)
-        self.mqtt_unsubscribe(topic)
 
     def subscribe_heart_beat(
         self,
@@ -267,26 +236,6 @@ class YarboClient:
             encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
         self._mqtt.publish(topic, encoded)
-
-    def set_working_state(self, sn: str, type_id: str, state: int) -> None:
-        """Set device working state.
-
-        Args:
-            sn: Device serial number.
-            type_id: Device type ID.
-            state: 0 = standby, 1 = working.
-        """
-        self.mqtt_publish_command(sn, type_id, "set_working_state", {"state": state})
-
-    # --- Device Registry ---
-
-    def get_device_type(self, type_id: str) -> DeviceType | None:
-        """Query device type capabilities from the registry."""
-        return get_device_type(type_id)
-
-    def list_device_types(self) -> list[DeviceType]:
-        """List all registered device types."""
-        return list_device_types()
 
     # --- Lifecycle ---
 

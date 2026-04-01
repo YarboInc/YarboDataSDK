@@ -6,4 +6,3 @@ AUTH_REFRESH = "/auth/refresh"
 
 # Devices
 DEVICES_LIST = "/devices"
-DEVICE_DETAIL = "/devices/{sn}"

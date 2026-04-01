@@ -68,19 +68,6 @@ class TestRestoreSession:
         assert responses.calls[0].request.headers["Authorization"] == "Bearer saved_token"
 
 
-class TestDeviceRegistry:
-    """Device registry via client."""
-
-    def test_list_device_types(self, client):
-        types = client.list_device_types()
-        assert len(types) >= 1
-
-    def test_get_device_type(self, client):
-        dt = client.get_device_type("yarbo_Y")
-        assert dt is not None
-        assert dt.type_id == "yarbo_Y"
-
-
 class TestFullFlow:
     """TC-024: Full workflow."""
 
@@ -278,29 +265,3 @@ class TestMqttPublishCommand:
             authed_client.mqtt_publish_command("SN001", "yarbo_Y", "nonexistent_topic", {"x": 1})
 
 
-class TestSetWorkingState:
-    """TC-013: set_working_state is a convenience wrapper."""
-
-    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
-    def test_set_working_state_standby(self, MockClient, authed_client):
-        """TC-013a: set_working_state(0) sends {"state": 0}."""
-        import json
-        mock_instance = MockClient.return_value
-        authed_client.mqtt_connect()
-        authed_client.set_working_state("SN001", "yarbo_Y", 0)
-
-        call_args = mock_instance.publish.call_args
-        payload_bytes = call_args[0][1]
-        assert json.loads(payload_bytes) == {"state": 0}
-
-    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
-    def test_set_working_state_working(self, MockClient, authed_client):
-        """TC-013b: set_working_state(1) sends {"state": 1}."""
-        import json
-        mock_instance = MockClient.return_value
-        authed_client.mqtt_connect()
-        authed_client.set_working_state("SN001", "yarbo_Y", 1)
-
-        call_args = mock_instance.publish.call_args
-        payload_bytes = call_args[0][1]
-        assert json.loads(payload_bytes) == {"state": 1}
