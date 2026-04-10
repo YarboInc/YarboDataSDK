@@ -1,128 +1,68 @@
-# Device Fields
+# Available Data
 
-## Yarbo Y Series (`yarbo_Y`)
+## How to Access
 
-### Status Fields
-
-These fields are available from `device_msg` MQTT messages and REST API status responses.
-
-#### Battery
-
-| Field | Path | Entity Type | Device Class | Unit | Values |
-|-------|------|-------------|--------------|------|--------|
-| Battery | `BatteryMSG.capacity` | sensor | battery | % | 0–100 |
-| Battery Status | `BatteryMSG.status` | sensor | enum | — | 0=unknown, 1=normal, 2=low, 3=critical |
-| Battery Temp Error | `BatteryMSG.temp_err` | binary_sensor | problem | — | 0=ok, 1=error |
-| Charging | `StateMSG.charging_status` | binary_sensor | battery_charging | — | 0=not charging, 1=charging |
-
-#### Status
-
-| Field | Path | Entity Type | Device Class | Unit | Values |
-|-------|------|-------------|--------------|------|--------|
-| Online | `__device__.online` | binary_sensor | connectivity | — | true/false |
-| Working State | `StateMSG.working_state` | sensor | enum | — | 0=idle, 1=working, 2=paused, 3=error, 4=returning |
-| Heart Beat State | `HeartBeatMSG.working_state` | sensor | enum | — | 0=standby, 1=working |
-| Error Code | `StateMSG.error_code` | sensor | — | — | Error code integer |
-| Base Status | `base_status` | sensor | — | — | Base station status |
-
-#### Position
-
-| Field | Path | Entity Type | Unit | Description |
-|-------|------|-------------|------|-------------|
-| Position X | `CombinedOdom.x` | sensor | m | X coordinate |
-| Position Y | `CombinedOdom.y` | sensor | m | Y coordinate |
-| Heading | `CombinedOdom.phi` | sensor | ° | Heading angle |
-| Position Confidence | `combined_odom_confidence` | sensor | — | Position confidence level |
-
-#### RTK
-
-| Field | Path | Entity Type | Values |
-|-------|------|-------------|--------|
-| RTK Status | `RTKMSG.status` | sensor | 0=no_fix, 1=single, 2=float, 4=fixed, 5=dead_reckoning |
-| RTK Heading Status | `RTKMSG.heading_status` | sensor | Heading status value |
-| RTCM Age | `rtcm_age` | sensor | Age in seconds |
-
-#### Head
-
-| Field | Path | Entity Type | Values |
-|-------|------|-------------|--------|
-| Head Type | `HeadMsg.head_type` | sensor | 0=none, 1=snow_blower, 2=leaf_blower, 3=mower, 4=smart_cover |
-| Head Serial Number | `HeadSerialMsg.head_sn` | sensor | Serial number string |
-| Chute Angle | `RunningStatusMSG.chute_angle` | sensor | Angle in degrees |
-
-#### Ultrasonic
-
-| Field | Path | Entity Type | Unit | Description |
-|-------|------|-------------|------|-------------|
-| Ultrasonic Left Front | `ultrasonic_msg.lf_dis` | sensor | mm | Left front distance |
-| Ultrasonic Middle | `ultrasonic_msg.mt_dis` | sensor | mm | Middle distance |
-| Ultrasonic Right Front | `ultrasonic_msg.rf_dis` | sensor | mm | Right front distance |
-
-#### GPS Reference (via `data_feedback`)
-
-These fields are obtained by sending `read_gps_ref` command and receiving the response via `data_feedback`.
-
-| Field | Path | Description |
-|-------|------|-------------|
-| Reference Latitude | `data.ref.latitude` | GPS origin latitude (degrees) |
-| Reference Longitude | `data.ref.longitude` | GPS origin longitude (degrees) |
-| RTK Fix Type | `data.rtkFixType` | `1` = valid/fixed, other = not initialized |
-| Height | `data.hgt` | Height in meters |
-
-**Note**: These fields are not from `device_msg` — they are fetched on demand via the `read_gps_ref` control topic and received on the `data_feedback` subscribe topic.
-
-### Control Fields
-
-These fields allow sending commands to the device via MQTT.
-
-| Field | State Path | Entity Type | Command Topic | Options | Command Payload |
-|-------|-----------|-------------|---------------|---------|-----------------|
-| Working State | `HeartBeatMSG.working_state` | select | `set_working_state` | standby, working | `{"state": 0}` or `{"state": 1}` |
-
-### Enabled by Default
-
-Not all fields are enabled by default. Fields with `enabled_by_default: false`:
-
-- Battery Status
-- Base Status
-- Position X, Position Y, Heading, Position Confidence
-- RTK Heading Status, RTCM Age
-- Head Serial Number, Chute Angle
-- Ultrasonic Left Front, Ultrasonic Middle, Ultrasonic Right Front
-
-## Accessing Fields
-
-### From MQTT messages
+All data fields can be discovered programmatically:
 
 ```python
-from yarbo_robot_sdk import extract_field
+from yarbo_robot_sdk import get_field_definitions, get_control_field_definitions, extract_field
 
-def on_device_message(topic, data):
-    battery = extract_field(data, "BatteryMSG.capacity")      # 85
-    state = extract_field(data, "StateMSG.working_state")      # 1
-    head = extract_field(data, "HeadMsg.head_type")            # 1 (snow_blower)
-    rtk = extract_field(data, "RTKMSG.status")                 # 4 (fixed)
-```
-
-### From the device registry
-
-```python
-from yarbo_robot_sdk import get_field_definitions, get_control_field_definitions
-
-# Get all status field definitions
+# List all available monitoring data
 fields = get_field_definitions("yarbo_Y")
 for f in fields:
-    print(f"{f.name}: path={f.path}, type={f.entity_type}, unit={f.unit}")
+    print(f"{f.name} ({f.entity_type}): {f.path}")
 
-# Get control field definitions
+# List all available controls
 controls = get_control_field_definitions("yarbo_Y")
 for c in controls:
-    print(f"{c.name}: options={c.options}, command_topic={c.command_topic}")
+    print(f"{c.name} ({c.entity_type}): {c.path}")
+
+# Extract a specific value from device status data
+def on_status(topic, data):
+    battery = extract_field(data, "BatteryMSG.capacity")
+    print(f"Battery: {battery}%")
 ```
 
-## Special Path Prefixes
+---
 
-| Prefix | Meaning | Example |
-|--------|---------|---------|
-| `__device__.` | Value from the `Device` object (REST API), not MQTT | `__device__.online` |
-| (none) | Value from MQTT message payload | `BatteryMSG.capacity` |
+## Yarbo Y Series — Monitoring Data
+
+| Name | Type | Unit | Description |
+|------|------|------|-------------|
+| Battery | sensor | % | Battery capacity level |
+| Charging | binary_sensor | - | Whether the device is charging |
+| Error Code | sensor | - | Current error code (0 = normal) |
+| Heart Beat State | sensor | - | Working state: standby or working |
+| Network | sensor | - | Active network: Halow, Wifi, or 4G |
+| Head Type | sensor | - | Attached head: None, Snow Blower, Blower, Mower, Smart Cover, Mower Pro |
+| Head Serial Number | sensor | - | Serial number of attached head |
+| Auto Plan Status | sensor | - | Plan execution status with detailed error info |
+| Auto Plan Pause Status | sensor | - | Reason why plan is paused |
+| Recharging Status | sensor | - | Return-to-charge status with detailed error info |
+| Sound Enabled | binary_sensor | - | Whether sound is on |
+| Headlight | binary_sensor | - | Whether headlight is on |
+| Volume | sensor | % | Current sound volume |
+| RTK Signal | sensor | - | GPS signal strength: Strong, Medium, or Weak |
+| Position X | sensor | m | Device local X coordinate |
+| Position Y | sensor | m | Device local Y coordinate |
+| Heading | sensor | ° | Device heading angle |
+
+## Yarbo Y Series — Controls
+
+| Name | Type | Description |
+|------|------|-------------|
+| Working State | select | Switch between standby and working |
+| Sound Switch | switch | Turn sound on/off |
+| Volume | number (0-100%) | Adjust sound volume |
+| Headlight | switch | Turn headlight on/off |
+
+## Yarbo Y Series — Data Requests
+
+These are fetched on demand via SDK methods:
+
+| Data | Method | Description |
+|------|--------|-------------|
+| Full Device Status | `get_device_msg()` | Complete snapshot of all device data |
+| Auto Plans | `read_all_plan()` | List of all configured auto plans |
+| GPS Reference | `read_gps_ref()` | GPS origin coordinates for coordinate conversion |
+| Map Data | `get_map()` | Work areas, pathways, charging stations, no-go zones |
