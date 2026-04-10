@@ -1,17 +1,22 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "type_id": "yarbo_Y",
   "name": "Yarbo Y Series",
   "topics": [
     {
       "name": "device_msg",
       "template": "snowbot/{sn}/device/DeviceMSG",
-      "description": "设备实时信息"
+      "description": "Device real-time status push"
     },
     {
       "name": "heart_beat",
       "template": "snowbot/{sn}/device/heart_beat",
-      "description": "机器心跳状态"
+      "description": "Device heartbeat status"
+    },
+    {
+      "name": "data_feedback",
+      "template": "snowbot/{sn}/device/data_feedback",
+      "description": "Device command response feedback"
     }
   ],
   "apis": [
@@ -19,14 +24,74 @@
       "name": "device_detail",
       "method": "GET",
       "path_template": "/devices/{sn}",
-      "description": "设备详情"
+      "description": "Device detail"
     }
   ],
   "control_topics": [
     {
       "name": "set_working_state",
       "template": "snowbot/{sn}/app/set_working_state",
-      "description": "设置机器工作状态"
+      "description": "Set device working state"
+    },
+    {
+      "name": "read_gps_ref",
+      "template": "snowbot/{sn}/app/read_gps_ref",
+      "description": "Request GPS reference origin"
+    },
+    {
+      "name": "get_map",
+      "template": "snowbot/{sn}/app/get_map",
+      "description": "Request map/zone data"
+    },
+    {
+      "name": "read_all_plan",
+      "template": "snowbot/{sn}/app/read_all_plan",
+      "description": "Request all auto plans"
+    },
+    {
+      "name": "get_device_msg",
+      "template": "snowbot/{sn}/app/get_device_msg",
+      "description": "Request full DeviceMSG snapshot"
+    },
+    {
+      "name": "start_plan",
+      "template": "snowbot/{sn}/app/start_plan",
+      "description": "Start an auto plan"
+    },
+    {
+      "name": "pause",
+      "template": "snowbot/{sn}/app/pause",
+      "description": "Pause current plan"
+    },
+    {
+      "name": "resume",
+      "template": "snowbot/{sn}/app/resume",
+      "description": "Resume paused plan"
+    },
+    {
+      "name": "stop",
+      "template": "snowbot/{sn}/app/stop",
+      "description": "Stop current plan"
+    },
+    {
+      "name": "cmd_recharge",
+      "template": "snowbot/{sn}/app/cmd_recharge",
+      "description": "Return to charging station"
+    },
+    {
+      "name": "set_sound_param",
+      "template": "snowbot/{sn}/app/set_sound_param",
+      "description": "Set sound parameters"
+    },
+    {
+      "name": "light_ctrl",
+      "template": "snowbot/{sn}/app/light_ctrl",
+      "description": "Control headlight"
+    },
+    {
+      "name": "wireless_charging_cmd",
+      "template": "snowbot/{sn}/app/wireless_charging_cmd",
+      "description": "Wireless charging control"
     }
   ],
   "control_fields": [
@@ -39,18 +104,43 @@
       "options": ["standby", "working"],
       "value_map": {"standby": 0, "working": 1},
       "state_value_map": {"0": "standby", "1": "working"},
+      "extra_payload": {"source": "smart_home"},
       "icon": "mdi:play-pause",
       "category": "control"
+    },
+    {
+      "path": "StateMSG.enable_sound",
+      "name": "Sound Switch",
+      "entity_type": "switch",
+      "command_topic": "set_sound_param",
+      "command_builder": "sound_switch",
+      "icon": "mdi:volume-high",
+      "category": "sound"
+    },
+    {
+      "path": "StateMSG.volume",
+      "name": "Volume",
+      "entity_type": "number",
+      "command_topic": "set_sound_param",
+      "command_builder": "sound_volume",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "%",
+      "icon": "mdi:volume-medium",
+      "category": "sound"
+    },
+    {
+      "path": "LedInfoMSG.led_head",
+      "name": "Headlight",
+      "entity_type": "switch",
+      "command_topic": "light_ctrl",
+      "command_builder": "light_switch",
+      "icon": "mdi:car-light-high",
+      "category": "light"
     }
   ],
   "fields": [
-    {
-      "path": "__device__.online",
-      "name": "Online",
-      "entity_type": "binary_sensor",
-      "device_class": "connectivity",
-      "category": "status"
-    },
     {
       "path": "BatteryMSG.capacity",
       "name": "Battery",
@@ -61,63 +151,17 @@
     },
     {
       "path": "BatteryMSG.status",
-      "name": "Battery Status",
-      "entity_type": "sensor",
-      "device_class": "enum",
-      "icon": "mdi:battery-heart-variant",
-      "value_map": {
-        "0": "unknown",
-        "1": "normal",
-        "2": "low",
-        "3": "critical"
-      },
-      "enabled_by_default": false,
-      "category": "battery"
-    },
-    {
-      "path": "BatteryMSG.temp_err",
-      "name": "Battery Temp Error",
-      "entity_type": "binary_sensor",
-      "device_class": "problem",
-      "value_map": {"0": "false", "1": "true"},
-      "category": "battery"
-    },
-    {
-      "path": "StateMSG.charging_status",
       "name": "Charging",
       "entity_type": "binary_sensor",
       "device_class": "battery_charging",
-      "value_map": {"0": "false", "1": "true"},
+      "custom_extractor": "charging_threshold",
       "category": "battery"
-    },
-    {
-      "path": "StateMSG.working_state",
-      "name": "Working State",
-      "entity_type": "sensor",
-      "device_class": "enum",
-      "icon": "mdi:state-machine",
-      "value_map": {
-        "0": "idle",
-        "1": "working",
-        "2": "paused",
-        "3": "error",
-        "4": "returning"
-      },
-      "category": "status"
     },
     {
       "path": "StateMSG.error_code",
       "name": "Error Code",
       "entity_type": "sensor",
       "icon": "mdi:alert-circle-outline",
-      "category": "status"
-    },
-    {
-      "path": "base_status",
-      "name": "Base Status",
-      "entity_type": "sensor",
-      "icon": "mdi:access-point",
-      "enabled_by_default": false,
       "category": "status"
     },
     {
@@ -129,6 +173,163 @@
       "value_map": {
         "0": "standby",
         "1": "working"
+      },
+      "category": "status"
+    },
+    {
+      "path": "route_priority",
+      "name": "Network",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:network",
+      "custom_extractor": "network_priority",
+      "value_map": {
+        "hg0": "Halow",
+        "wlan0": "Wifi",
+        "wwan0": "4G"
+      },
+      "category": "status"
+    },
+    {
+      "path": "HeadMsg.head_type",
+      "name": "Head Type",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:toolbox",
+      "value_map": {
+        "0": "None",
+        "1": "Snow Blower",
+        "2": "Blower",
+        "3": "Mower",
+        "4": "Smart Cover",
+        "5": "Mower Pro"
+      },
+      "category": "head"
+    },
+    {
+      "path": "HeadSerialMsg.head_sn",
+      "name": "Head Serial Number",
+      "entity_type": "sensor",
+      "icon": "mdi:barcode",
+      "category": "head"
+    },
+    {
+      "path": "StateMSG.on_going_planning",
+      "name": "Auto Plan Status",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:clipboard-play",
+      "custom_extractor": "planning_status",
+      "value_map": {
+        "Not Started": "Not Started",
+        "Cleaning": "Cleaning",
+        "Calculating Route": "Calculating Route",
+        "Heading to Area": "Heading to Area",
+        "Completed": "Completed",
+        "Waypoint Navigation": "Waypoint Navigation",
+        "Waypoint Complete": "Waypoint Complete",
+        "Error: Create Plan History Failed (WP002)": "Error: Create Plan History Failed (WP002)",
+        "Error: Plan Not Found (WP003)": "Error: Plan Not Found (WP003)",
+        "Error: Failed to Read Plan (WP004)": "Error: Failed to Read Plan (WP004)",
+        "Error: Failed to Calculate Route (WP005)": "Error: Failed to Calculate Route (WP005)",
+        "Error: Outside Mapped Area (WP006)": "Error: Outside Mapped Area (WP006)",
+        "Error: Area Data Error (WP007)": "Error: Area Data Error (WP007)",
+        "Error: Route Data Error (WP008)": "Error: Route Data Error (WP008)",
+        "Error: In No-Go Zone": "Error: In No-Go Zone",
+        "Error: Low Battery": "Error: Low Battery",
+        "Error: Module Position Failure (WP012)": "Error: Module Position Failure (WP012)",
+        "Error: Location Data Exception (WP013)": "Error: Location Data Exception (WP013)",
+        "Error: Docking Station Exception (WP014)": "Error: Docking Station Exception (WP014)",
+        "Error: Obstacle Mark Failed": "Error: Obstacle Mark Failed",
+        "Error: Out of Boundary": "Error: Out of Boundary",
+        "Error: Unable to Navigate Obstacle (WP016)": "Error: Unable to Navigate Obstacle (WP016)",
+        "Error: Exceeded Boundary (WP017)": "Error: Exceeded Boundary (WP017)",
+        "Error: Out of Boundary >1.5m": "Error: Out of Boundary >1.5m",
+        "Error: Out of Boundary (WP025)": "Error: Out of Boundary (WP025)",
+        "Error": "Error"
+      },
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.planning_paused",
+      "name": "Auto Plan Pause Status",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:clipboard-alert",
+      "value_map": {
+        "0": "Not Paused",
+        "1": "Manual Pause",
+        "2": "Low Battery Recharging",
+        "3": "Power Restart",
+        "4": "E-Stop",
+        "5": "Bumper",
+        "6": "Stuck",
+        "7": "Error"
+      },
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.on_going_recharging",
+      "name": "Recharging Status",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:battery-charging-wireless",
+      "custom_extractor": "recharging_status",
+      "value_map": {
+        "Not Started": "Not Started",
+        "Returning on Path": "Returning on Path",
+        "Returning in Area": "Returning in Area",
+        "Repositioning": "Repositioning",
+        "Charging": "Charging",
+        "Verifying": "Verifying",
+        "Error: Server Error": "Error: Server Error",
+        "Error: Direction Uninitialized": "Error: Direction Uninitialized",
+        "Error: Docking Station Uninitialized": "Error: Docking Station Uninitialized",
+        "Error: Recharge Failed (REC005)": "Error: Recharge Failed (REC005)",
+        "Error: Failed to Park": "Error: Failed to Park",
+        "Error: Docking Connection Failed": "Error: Docking Connection Failed",
+        "Error: Stuck": "Error: Stuck",
+        "Error: Outside Mapped Area": "Error: Outside Mapped Area",
+        "Error": "Error"
+      },
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.enable_sound",
+      "name": "Sound Enabled",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:volume-high",
+      "value_map": {"False": "false", "True": "true", "0": "false", "1": "true"},
+      "category": "sound"
+    },
+    {
+      "path": "LedInfoMSG.led_head",
+      "name": "Headlight",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:car-light-high",
+      "custom_extractor": "positive_threshold",
+      "category": "light"
+    },
+    {
+      "path": "StateMSG.volume",
+      "name": "Volume",
+      "entity_type": "sensor",
+      "unit": "%",
+      "icon": "mdi:volume-medium",
+      "custom_extractor": "volume_scale",
+      "category": "sound"
+    },
+    {
+      "path": "RTKMSG.status",
+      "name": "RTK Signal",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:crosshairs-gps",
+      "custom_extractor": "rtk_signal",
+      "value_map": {
+        "Strong": "Strong",
+        "Medium": "Medium",
+        "Weak": "Weak"
       },
       "category": "status"
     },
@@ -154,112 +355,10 @@
       "path": "CombinedOdom.phi",
       "name": "Heading",
       "entity_type": "sensor",
-      "unit": "°",
+      "unit": "\u00b0",
       "icon": "mdi:compass",
       "enabled_by_default": false,
       "category": "position"
-    },
-    {
-      "path": "combined_odom_confidence",
-      "name": "Position Confidence",
-      "entity_type": "sensor",
-      "icon": "mdi:crosshairs-gps",
-      "enabled_by_default": false,
-      "category": "position"
-    },
-    {
-      "path": "RTKMSG.status",
-      "name": "RTK Status",
-      "entity_type": "sensor",
-      "device_class": "enum",
-      "icon": "mdi:satellite-variant",
-      "value_map": {
-        "0": "no_fix",
-        "1": "single",
-        "2": "float",
-        "4": "fixed",
-        "5": "dead_reckoning"
-      },
-      "category": "rtk"
-    },
-    {
-      "path": "RTKMSG.heading_status",
-      "name": "RTK Heading Status",
-      "entity_type": "sensor",
-      "icon": "mdi:satellite-variant",
-      "enabled_by_default": false,
-      "category": "rtk"
-    },
-    {
-      "path": "rtcm_age",
-      "name": "RTCM Age",
-      "entity_type": "sensor",
-      "unit": "s",
-      "icon": "mdi:timer-outline",
-      "enabled_by_default": false,
-      "category": "rtk"
-    },
-    {
-      "path": "HeadMsg.head_type",
-      "name": "Head Type",
-      "entity_type": "sensor",
-      "device_class": "enum",
-      "icon": "mdi:toolbox",
-      "value_map": {
-        "0": "none",
-        "1": "snow_blower",
-        "2": "leaf_blower",
-        "3": "mower",
-        "4": "smart_cover"
-      },
-      "category": "head"
-    },
-    {
-      "path": "HeadSerialMsg.head_sn",
-      "name": "Head Serial Number",
-      "entity_type": "sensor",
-      "icon": "mdi:barcode",
-      "enabled_by_default": false,
-      "category": "head"
-    },
-    {
-      "path": "RunningStatusMSG.chute_angle",
-      "name": "Chute Angle",
-      "entity_type": "sensor",
-      "unit": "°",
-      "icon": "mdi:rotate-right",
-      "enabled_by_default": false,
-      "category": "head"
-    },
-    {
-      "path": "ultrasonic_msg.lf_dis",
-      "name": "Ultrasonic Left Front",
-      "entity_type": "sensor",
-      "device_class": "distance",
-      "unit": "mm",
-      "icon": "mdi:signal-distance-variant",
-      "enabled_by_default": false,
-      "category": "ultrasonic"
-    },
-    {
-      "path": "ultrasonic_msg.mt_dis",
-      "name": "Ultrasonic Middle",
-      "entity_type": "sensor",
-      "device_class": "distance",
-      "unit": "mm",
-      "icon": "mdi:signal-distance-variant",
-      "enabled_by_default": false,
-      "category": "ultrasonic"
-    },
-    {
-      "path": "ultrasonic_msg.rf_dis",
-      "name": "Ultrasonic Right Front",
-      "entity_type": "sensor",
-      "device_class": "distance",
-      "unit": "mm",
-      "icon": "mdi:signal-distance-variant",
-      "enabled_by_default": false,
-      "category": "ultrasonic"
     }
   ]
 }

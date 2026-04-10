@@ -1,7 +1,12 @@
 """Yarbo Robot SDK - Python SDK for Yarbo robot devices."""
 
 from yarbo_robot_sdk.client import YarboClient
-from yarbo_robot_sdk.device_helpers import extract_field
+from yarbo_robot_sdk.device_helpers import (
+    convert_local_to_gps,
+    convert_map_to_geojson,
+    extract_active_network,
+    extract_field,
+)
 from yarbo_robot_sdk.device_registry import (
     get_control_field_definitions,
     get_field_definitions,
@@ -22,4 +27,7 @@ __all__ = [
     "get_field_definitions",
     "get_control_field_definitions",
     "extract_field",
+    "extract_active_network",
+    "convert_local_to_gps",
+    "convert_map_to_geojson",
 ]

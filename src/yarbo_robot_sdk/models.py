@@ -30,6 +30,7 @@ class FieldDefinition:
         value_map: Maps raw values to readable strings. Keys are stringified.
         enabled_by_default: Whether the entity is enabled by default in HA.
         category: Field grouping for organization (e.g. "battery", "status", "position").
+        custom_extractor: Name of a special extraction function (e.g. "network_priority").
     """
 
     path: str
@@ -41,26 +42,32 @@ class FieldDefinition:
     value_map: dict[str, str] | None = None
     enabled_by_default: bool = True
     category: str | None = None
+    custom_extractor: str | None = None
 
 
 @dataclass
 class ControlFieldDefinition:
-    """Field definition for a controllable HA entity (e.g. select).
+    """Field definition for a controllable HA entity (select, switch, number).
 
     Attributes:
         path: Dot-separated path to read the current state value from MQTT data
               (e.g. "HeartBeatMSG.working_state").
         name: Display name for the entity.
-        entity_type: HA entity type — currently only "select" is supported.
+        entity_type: HA entity type — "select", "switch", or "number".
         command_topic: Name reference to a control_topic entry (used to resolve
                        the publish topic template, e.g. "set_working_state").
-        command_key: Key used in the command payload dict (e.g. "state" →
-                     publishes {"state": <raw_value>}).
-        options: Human-readable option list shown in HA (e.g. ["standby", "working"]).
-        value_map: Maps each option to the raw command value sent to the device
-                   (e.g. {"standby": 0, "working": 1}).
-        state_value_map: Maps raw state value strings to options for display
-                         (e.g. {"0": "standby", "1": "working"}).
+        command_key: Key used in the command payload dict for select entities
+                     (e.g. "state" → publishes {"state": <raw_value>}).
+        options: Human-readable option list for select entities.
+        value_map: Maps each option to the raw command value for select entities.
+        state_value_map: Maps raw state value strings to options for select entities.
+        extra_payload: Extra fields merged into the command payload (e.g. {"source": "smart_home"}).
+        command_builder: Named strategy for building the command payload
+                         (e.g. "sound_switch", "sound_volume", "light_switch").
+        min_value: Minimum value for number entities.
+        max_value: Maximum value for number entities.
+        step: Step size for number entities.
+        unit: Unit of measurement for number entities (e.g. "%").
         icon: MDI icon (e.g. "mdi:play-pause").
         enabled_by_default: Whether the entity is enabled by default in HA.
         category: Field grouping for organization (e.g. "control").
@@ -70,10 +77,16 @@ class ControlFieldDefinition:
     name: str
     entity_type: str
     command_topic: str
-    command_key: str
-    options: list[str]
-    value_map: dict[str, int]
-    state_value_map: dict[str, str]
+    command_key: str | None = None
+    options: list[str] | None = None
+    value_map: dict[str, int] | None = None
+    state_value_map: dict[str, str] | None = None
+    extra_payload: dict | None = None
+    command_builder: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    step: float | None = None
+    unit: str | None = None
     icon: str | None = None
     enabled_by_default: bool = True
     category: str | None = None

@@ -58,6 +58,19 @@ These fields are available from `device_msg` MQTT messages and REST API status r
 | Ultrasonic Middle | `ultrasonic_msg.mt_dis` | sensor | mm | Middle distance |
 | Ultrasonic Right Front | `ultrasonic_msg.rf_dis` | sensor | mm | Right front distance |
 
+#### GPS Reference (via `data_feedback`)
+
+These fields are obtained by sending `read_gps_ref` command and receiving the response via `data_feedback`.
+
+| Field | Path | Description |
+|-------|------|-------------|
+| Reference Latitude | `data.ref.latitude` | GPS origin latitude (degrees) |
+| Reference Longitude | `data.ref.longitude` | GPS origin longitude (degrees) |
+| RTK Fix Type | `data.rtkFixType` | `1` = valid/fixed, other = not initialized |
+| Height | `data.hgt` | Height in meters |
+
+**Note**: These fields are not from `device_msg` — they are fetched on demand via the `read_gps_ref` control topic and received on the `data_feedback` subscribe topic.
+
 ### Control Fields
 
 These fields allow sending commands to the device via MQTT.

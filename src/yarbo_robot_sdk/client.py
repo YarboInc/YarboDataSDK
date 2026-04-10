@@ -1,8 +1,12 @@
 """YarboClient — main SDK entry point."""
 
 import json
+import logging
+import threading
 from collections.abc import Callable
 from typing import Any
+
+_LOGGER = logging.getLogger(__name__)
 
 from yarbo_robot_sdk import endpoints
 from yarbo_robot_sdk.auth import AuthManager
@@ -81,6 +85,10 @@ class YarboClient:
 
         # Per-device firmware version cache: {sn: (major, minor, patch)}
         self._firmware_versions: dict[str, tuple[int, int, int]] = {}
+
+        # data_feedback listeners: {sn: [(topic_filter, callback), ...]}
+        self._feedback_listeners: dict[str, list[tuple[str, Callable]]] = {}
+        self._feedback_lock = threading.Lock()
 
     # --- Auth ---
 
@@ -204,6 +212,207 @@ class YarboClient:
 
         self.mqtt_subscribe(topic, _wrapper)
 
+    def subscribe_data_feedback(
+        self,
+        sn: str,
+        type_id: str,
+        callback: Callable[[str, dict], Any] | None = None,
+    ) -> None:
+        """Subscribe to device data_feedback topic (snowbot/{sn}/device/data_feedback).
+
+        This topic receives responses to app commands (e.g. read_gps_ref).
+        Response format: {"topic": "...", "msg": "...", "state": 0, "data": {...}}
+
+        The callback receives (topic: str, data: dict). Internally, messages are
+        also dispatched to one-time listeners registered by request_with_feedback().
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            callback: Optional callback for all data_feedback messages.
+        """
+        topic = resolve_topic_by_name(sn, type_id, "data_feedback")
+
+        def _wrapper(topic_str: str, payload: bytes) -> None:
+            try:
+                data = decode_mqtt_payload(payload)
+            except Exception:
+                data = {"_raw": payload.decode(errors="replace")}
+
+            # Dispatch to one-time listeners registered by request_with_feedback
+            response_topic = data.get("topic", "")
+            with self._feedback_lock:
+                listeners = self._feedback_listeners.get(sn, [])
+                for topic_filter, listener_cb in listeners:
+                    if topic_filter == response_topic:
+                        listener_cb(topic_str, data)
+
+            # Also invoke the general callback if provided
+            if callback is not None:
+                callback(topic_str, data)
+
+        self.mqtt_subscribe(topic, _wrapper)
+
+    def request_with_feedback(
+        self,
+        sn: str,
+        type_id: str,
+        command_topic_name: str,
+        payload: dict,
+        response_topic_filter: str,
+        timeout: float = 10.0,
+    ) -> dict:
+        """Publish a command and wait for the matching data_feedback response.
+
+        This is a synchronous blocking method. In HA, call via async_add_executor_job.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            command_topic_name: Control topic name to publish to.
+            payload: Command payload dict.
+            response_topic_filter: Expected 'topic' field value in the data_feedback response.
+            timeout: Maximum seconds to wait for response.
+
+        Returns:
+            The full response dict from data_feedback.
+
+        Raises:
+            TimeoutError: If no matching response arrives within timeout.
+            YarboSDKError: If the response state is non-zero.
+        """
+        event = threading.Event()
+        result: dict = {}
+
+        def _on_match(topic_str: str, data: dict) -> None:
+            result.update(data)
+            event.set()
+
+        # Register one-time listener
+        with self._feedback_lock:
+            if sn not in self._feedback_listeners:
+                self._feedback_listeners[sn] = []
+            entry = (response_topic_filter, _on_match)
+            self._feedback_listeners[sn].append(entry)
+
+        try:
+            # Publish the command
+            self.mqtt_publish_command(sn, type_id, command_topic_name, payload)
+
+            # Wait for matching response
+            if not event.wait(timeout):
+                raise TimeoutError(
+                    f"No data_feedback response for '{response_topic_filter}' "
+                    f"within {timeout}s"
+                )
+
+            # Check response state
+            state = result.get("state")
+            if state is not None and state != 0:
+                raise YarboSDKError(
+                    f"Command '{response_topic_filter}' failed with state={state}: "
+                    f"{result.get('msg', '')}"
+                )
+
+            return result
+        finally:
+            # Clean up one-time listener
+            with self._feedback_lock:
+                listeners = self._feedback_listeners.get(sn, [])
+                if entry in listeners:
+                    listeners.remove(entry)
+
+    def read_gps_ref(self, sn: str, type_id: str, timeout: float = 10.0) -> dict:
+        """Request GPS reference origin coordinates from the device.
+
+        Sends read_gps_ref command and waits for the response via data_feedback.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            timeout: Maximum seconds to wait for response.
+
+        Returns:
+            Response dict containing data.ref.latitude, data.ref.longitude,
+            data.rtkFixType, etc.
+
+        Raises:
+            TimeoutError: If no response within timeout.
+            YarboSDKError: If the response state is non-zero.
+        """
+        return self.request_with_feedback(
+            sn, type_id, "read_gps_ref", {}, "read_gps_ref", timeout
+        )
+
+    def get_map(self, sn: str, type_id: str, timeout: float = 30.0) -> dict:
+        """Request map/zone data from the device.
+
+        Sends get_map command and waits for the response via data_feedback.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            timeout: Maximum seconds to wait for response (default 30s due to
+                large payload size).
+
+        Returns:
+            Response dict containing data.areas, data.pathways, data.sidewalks,
+            data.deadends, data.chargingData, etc.
+
+        Raises:
+            TimeoutError: If no response within timeout.
+            YarboSDKError: If the response state is non-zero.
+        """
+        return self.request_with_feedback(
+            sn, type_id, "get_map", {}, "get_map", timeout
+        )
+
+    def read_all_plan(self, sn: str, type_id: str, timeout: float = 10.0) -> dict:
+        """Request all auto plans from the device.
+
+        Sends read_all_plan command and waits for the response via data_feedback.
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            timeout: Maximum seconds to wait for response.
+
+        Returns:
+            Response dict containing data.data (list of plans with id, name,
+            areaIds, enable_self_order).
+
+        Raises:
+            TimeoutError: If no response within timeout.
+            YarboSDKError: If the response state is non-zero.
+        """
+        return self.request_with_feedback(
+            sn, type_id, "read_all_plan", {}, "read_all_plan", timeout
+        )
+
+    def get_device_msg(self, sn: str, type_id: str, timeout: float = 10.0) -> dict:
+        """Request full DeviceMSG snapshot from the device.
+
+        Sends get_device_msg command and waits for the response via data_feedback.
+        The response structure is identical to the real-time DeviceMSG push but
+        contains all fields (some fields are omitted in real-time push for
+        bandwidth savings).
+
+        Args:
+            sn: Device serial number.
+            type_id: Device type ID.
+            timeout: Maximum seconds to wait for response.
+
+        Returns:
+            Response dict containing the full DeviceMSG snapshot.
+
+        Raises:
+            TimeoutError: If no response within timeout.
+            YarboSDKError: If the response state is non-zero.
+        """
+        return self.request_with_feedback(
+            sn, type_id, "get_device_msg", {}, "get_device_msg", timeout
+        )
+
     def mqtt_publish_command(
         self,
         sn: str,
@@ -235,6 +444,10 @@ class YarboClient:
         else:
             encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
+        _LOGGER.debug(
+            "MQTT publish → topic=%s payload=%s compressed=%s",
+            topic, payload, should_compress(fw),
+        )
         self._mqtt.publish(topic, encoded)
 
     # --- Lifecycle ---

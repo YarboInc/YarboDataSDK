@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 DEVICES_DIR = Path(__file__).parent / "devices"
 
 VALID_ENTITY_TYPES = {"sensor", "binary_sensor", "device_tracker"}
-VALID_CONTROL_ENTITY_TYPES = {"select"}
+VALID_CONTROL_ENTITY_TYPES = {"select", "switch", "number"}
 
 
 @dataclass
@@ -95,16 +95,13 @@ def _parse_field(raw: dict, json_file: str) -> FieldDefinition:
         value_map=raw.get("value_map"),
         enabled_by_default=raw.get("enabled_by_default", True),
         category=raw.get("category"),
+        custom_extractor=raw.get("custom_extractor"),
     )
 
 
 def _parse_control_field(raw: dict, json_file: str) -> ControlFieldDefinition:
     """Parse a single control field definition from JSON dict."""
-    required = (
-        "path", "name", "entity_type",
-        "command_topic", "command_key",
-        "options", "value_map", "state_value_map",
-    )
+    required = ("path", "name", "entity_type", "command_topic")
     for key in required:
         if key not in raw:
             raise DeviceRegistryError(
@@ -123,10 +120,16 @@ def _parse_control_field(raw: dict, json_file: str) -> ControlFieldDefinition:
         name=raw["name"],
         entity_type=entity_type,
         command_topic=raw["command_topic"],
-        command_key=raw["command_key"],
-        options=raw["options"],
-        value_map=raw["value_map"],
-        state_value_map=raw["state_value_map"],
+        command_key=raw.get("command_key"),
+        options=raw.get("options"),
+        value_map=raw.get("value_map"),
+        state_value_map=raw.get("state_value_map"),
+        extra_payload=raw.get("extra_payload"),
+        command_builder=raw.get("command_builder"),
+        min_value=raw.get("min"),
+        max_value=raw.get("max"),
+        step=raw.get("step"),
+        unit=raw.get("unit"),
         icon=raw.get("icon"),
         enabled_by_default=raw.get("enabled_by_default", True),
         category=raw.get("category"),
@@ -232,9 +235,24 @@ def _load_device_types() -> dict[str, DeviceType]:
 DEVICE_REGISTRY: dict[str, DeviceType] = _load_device_types()
 
 
+DEFAULT_DEVICE_TYPE = "yarbo_Y"
+
+
 def get_device_type(type_id: str) -> DeviceType | None:
-    """Look up a device type by its ID."""
-    return DEVICE_REGISTRY.get(type_id)
+    """Look up a device type by its ID, falling back to yarbo_Y for unknown types.
+
+    All Yarbo devices share the same MQTT topic structure and data format,
+    so unknown type_ids (e.g. "mower" from the REST API) can safely use
+    the yarbo_Y definition as a fallback.
+    """
+    dt = DEVICE_REGISTRY.get(type_id)
+    if dt is None and type_id != DEFAULT_DEVICE_TYPE:
+        _LOGGER.debug(
+            "Unknown device type '%s', falling back to '%s'",
+            type_id, DEFAULT_DEVICE_TYPE,
+        )
+        dt = DEVICE_REGISTRY.get(DEFAULT_DEVICE_TYPE)
+    return dt
 
 
 def list_device_types() -> list[DeviceType]:
