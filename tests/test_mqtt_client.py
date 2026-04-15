@@ -1,4 +1,4 @@
-"""Tests for MqttClient — TC-010~015."""
+"""Tests for MqttClient — TC-010~015, TC-021~023."""
 
 from unittest.mock import MagicMock, patch
 
@@ -27,26 +27,53 @@ def mqtt_client(auth_manager, mqtt_config):
 
 
 class TestMqttConnect:
-    """TC-010, TC-011."""
+    """TC-010, TC-011, TC-021, TC-022."""
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
-    def test_connect_uses_email_and_token(self, MockClient, mqtt_client, mock_tokens):
-        """TC-010: HTTP AUTH via username=email, password=JWT."""
+    def test_connect_uses_jwt_as_username(self, MockClient, mqtt_client, mock_tokens):
+        """TC-022: HTTP AUTH via username=JWT, password=""."""
         mock_instance = MockClient.return_value
         mqtt_client.connect()
 
-        # Verify client_id starts with yarbo-ha- prefix
-        call_kwargs = MockClient.call_args
-        client_id = call_kwargs.kwargs.get("client_id") or call_kwargs[1].get("client_id", "")
-        assert client_id.startswith("yarbo-ha-"), f"client_id should start with 'yarbo-ha-', got '{client_id}'"
-
         mock_instance.username_pw_set.assert_called_once_with(
-            username="user@test.com", password=mock_tokens["token"]
+            username=mock_tokens["token"], password=""
         )
         mock_instance.connect.assert_called_once_with(
             "test-mqtt.yarbo.com", 8883, 60
         )
         mock_instance.loop_start.assert_called_once()
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_client_id_format(self, MockClient, mqtt_client):
+        """TC-021: client_id format is HA_{email}_{timestamp}."""
+        mqtt_client.connect()
+
+        call_kwargs = MockClient.call_args
+        client_id = call_kwargs.kwargs.get("client_id") or call_kwargs[1].get("client_id", "")
+
+        assert client_id.startswith("HA_"), f"client_id should start with 'HA_', got '{client_id}'"
+        assert "user@test.com" in client_id, f"client_id should contain email, got '{client_id}'"
+        # Format: HA_{email}_{timestamp}
+        parts = client_id.split("_", 2)  # HA, user@test.com, timestamp
+        assert len(parts) >= 3, f"client_id should have at least 3 parts, got '{client_id}'"
+        # Last part should be a numeric timestamp
+        timestamp_part = parts[-1]
+        assert timestamp_part.isdigit(), f"Last part should be timestamp, got '{timestamp_part}'"
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_custom_client_id_prefix(self, MockClient, auth_manager, mqtt_config):
+        """Custom client_id prefix is used when provided."""
+        client = MqttClient(
+            auth_manager=auth_manager,
+            host=mqtt_config["mqtt_host"],
+            port=mqtt_config["mqtt_port"],
+            client_id_prefix="Custom_",
+        )
+        client.connect()
+
+        call_kwargs = MockClient.call_args
+        client_id = call_kwargs.kwargs.get("client_id") or call_kwargs[1].get("client_id", "")
+        assert client_id.startswith("Custom_")
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
     def test_tls_enabled(self, MockClient, mqtt_client):
@@ -154,7 +181,7 @@ class TestMqttMessageDispatch:
 
 
 class TestMqttReconnect:
-    """TC-014."""
+    """TC-014, TC-023."""
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
     def test_on_connect_resubscribes(self, MockClient, mqtt_client):
@@ -170,6 +197,25 @@ class TestMqttReconnect:
         mqtt_client._on_connect(mock_instance, None, None, 0)
 
         assert mock_instance.subscribe.call_count == 2
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_on_disconnect_refreshes_token_as_username(self, MockClient, mqtt_client, mock_tokens):
+        """TC-023: on unexpected disconnect, refresh token and set username=JWT."""
+        mock_instance = MockClient.return_value
+        mqtt_client.connect()
+
+        # Mock auth refresh to update token
+        new_token = "new_refreshed_jwt_token"
+        mqtt_client._auth._token = new_token
+
+        # Simulate unexpected disconnect (rc != 0)
+        with patch.object(mqtt_client._auth, "refresh"):
+            mqtt_client._on_disconnect(mock_instance, None, None, 1)
+
+        # Verify username_pw_set called with new token as username
+        last_call = mock_instance.username_pw_set.call_args
+        assert last_call.kwargs.get("username") == new_token or last_call[0][0] == new_token
+        assert last_call.kwargs.get("password") == "" or last_call[0][1] == ""
 
 
 class TestMqttPublish:

@@ -1,7 +1,7 @@
 """MQTT client — connection, subscription, callback dispatch, auto-reconnect."""
 
 import logging
-import uuid
+import time as _time
 from collections.abc import Callable
 from typing import Any
 
@@ -13,11 +13,12 @@ from yarbo_robot_sdk.auth import AuthManager
 from yarbo_robot_sdk.config import MQTT_KEEPALIVE
 from yarbo_robot_sdk.exceptions import MqttConnectionError
 
-SDK_CLIENTID_PREFIX = "yarbo-ha-"
+# Default client_id prefix — used by HA integration.
+DEFAULT_CLIENTID_PREFIX = "HA_"
 
 
 class MqttClient:
-    """Manages MQTT connection using HTTP AUTH (username=email, password=JWT)."""
+    """Manages MQTT connection using HTTP AUTH (username=JWT, password="")."""
 
     def __init__(
         self,
@@ -26,30 +27,35 @@ class MqttClient:
         port: int,
         use_tls: bool = True,
         keepalive: int = MQTT_KEEPALIVE,
+        client_id_prefix: str = DEFAULT_CLIENTID_PREFIX,
     ):
         self._auth = auth_manager
         self._host = host
         self._port = port
         self._use_tls = use_tls
         self._keepalive = keepalive
+        self._client_id_prefix = client_id_prefix
         self._client: mqtt.Client | None = None
         self._callbacks: dict[str, list[Callable]] = {}
         self._connected = False
 
     def connect(self) -> None:
-        """Establish MQTT connection. username=email, password=JWT token."""
+        """Establish MQTT connection. username=JWT, password=""."""
         if not self._auth.is_authenticated:
             raise MqttConnectionError("Not authenticated. Call login() first.")
 
         try:
-            client_id = f"{SDK_CLIENTID_PREFIX}{uuid.uuid4().hex[:12]}"
+            client_id = (
+                f"{self._client_id_prefix}"
+                f"{self._auth.username}_{int(_time.time())}"
+            )
             self._client = mqtt.Client(
                 client_id=client_id,
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             )
             self._client.username_pw_set(
-                username=self._auth.username,
-                password=self._auth.token,
+                username=self._auth.token,
+                password="",
             )
 
             if self._use_tls:
@@ -152,7 +158,10 @@ class MqttClient:
         if rc != 0:
             try:
                 self._auth.refresh()
-                client.username_pw_set(username=self._auth.username, password=self._auth.token)
+                client.username_pw_set(
+                    username=self._auth.token,
+                    password="",
+                )
                 # paho will auto-reconnect via loop_start background thread
             except Exception:
                 pass  # Refresh failed; will retry on next reconnect attempt
