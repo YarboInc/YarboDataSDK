@@ -99,9 +99,9 @@ class TestResolveDeviceMsgTopic:
         topic = resolve_device_msg_topic("SN001", "yarbo_Y")
         assert topic == "snowbot/SN001/device/DeviceMSG"
 
-    def test_resolve_unknown_type(self):
-        with pytest.raises(YarboSDKError, match="Unknown device type"):
-            resolve_device_msg_topic("SN001", "unknown_type")
+    def test_resolve_unknown_type_falls_back_to_yarbo_y(self):
+        topic = resolve_device_msg_topic("SN001", "unknown_type")
+        assert topic == "snowbot/SN001/device/DeviceMSG"
 
 
 class TestResolveTopicByName:
@@ -115,9 +115,9 @@ class TestResolveTopicByName:
         with pytest.raises(YarboSDKError, match="No topic"):
             resolve_topic_by_name("SN001", "yarbo_Y", "nonexistent_topic")
 
-    def test_resolve_unknown_device_type(self):
-        with pytest.raises(YarboSDKError, match="Unknown device type"):
-            resolve_topic_by_name("SN001", "bad_type", "heart_beat")
+    def test_resolve_unknown_device_type_falls_back_to_yarbo_y(self):
+        topic = resolve_topic_by_name("SN001", "bad_type", "heart_beat")
+        assert topic == "snowbot/SN001/device/heart_beat"
 
 
 # ---- get_map GeoJSON conversion tests ----

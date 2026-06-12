@@ -17,6 +17,19 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/yarbo_robot_sdk"]
+include = [
+    "src/yarbo_robot_sdk/py.typed",
+    "src/yarbo_robot_sdk/devices/*.json",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/yarbo_robot_sdk/**/*.py",
+    "src/yarbo_robot_sdk/py.typed",
+    "src/yarbo_robot_sdk/devices/*.json",
+    "README.md",
+    "pyproject.toml",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -54,6 +54,11 @@
       "description": "Request full DeviceMSG snapshot"
     },
     {
+      "name": "get_connect_wifi_name",
+      "template": "snowbot/{sn}/app/get_connect_wifi_name",
+      "description": "Request connected Wi-Fi information"
+    },
+    {
       "name": "start_plan",
       "template": "snowbot/{sn}/app/start_plan",
       "description": "Start an auto plan"
@@ -86,12 +91,62 @@
     {
       "name": "light_ctrl",
       "template": "snowbot/{sn}/app/light_ctrl",
-      "description": "Control headlight"
+      "description": "Control head light"
+    },
+    {
+      "name": "set_person_detect",
+      "template": "snowbot/{sn}/app/set_person_detect",
+      "description": "Set person detection"
+    },
+    {
+      "name": "set_follow_state",
+      "template": "snowbot/{sn}/app/set_follow_state",
+      "description": "Set follow mode"
+    },
+    {
+      "name": "save_global_params",
+      "template": "snowbot/{sn}/app/save_global_params",
+      "description": "Save global parameters"
+    },
+    {
+      "name": "set_map_obstacle_switch",
+      "template": "snowbot/{sn}/app/set_map_obstacle_switch",
+      "description": "Set map obstacle switch"
+    },
+    {
+      "name": "ignore_obstacles",
+      "template": "snowbot/{sn}/app/ignore_obstacles",
+      "description": "Ignore obstacle zones"
+    },
+    {
+      "name": "set_child_lock",
+      "template": "snowbot/{sn}/app/set_child_lock",
+      "description": "Set child lock"
+    },
+    {
+      "name": "song_cmd",
+      "template": "snowbot/{sn}/app/song_cmd",
+      "description": "Play device sound"
     },
     {
       "name": "wireless_charging_cmd",
       "template": "snowbot/{sn}/app/wireless_charging_cmd",
       "description": "Wireless charging control"
+    },
+    {
+      "name": "mower_target_cmd",
+      "template": "snowbot/{sn}/app/mower_target_cmd",
+      "description": "Set mower blade target height"
+    },
+    {
+      "name": "mower_speed_cmd",
+      "template": "snowbot/{sn}/app/mower_speed_cmd",
+      "description": "Set mower blade speed"
+    },
+    {
+      "name": "cmd_set_chute_angle",
+      "template": "snowbot/{sn}/app/cmd_set_chute_angle",
+      "description": "Set snow chute angle"
     }
   ],
   "control_fields": [
@@ -101,10 +156,21 @@
       "entity_type": "select",
       "command_topic": "set_working_state",
       "command_key": "state",
-      "options": ["standby", "working"],
-      "value_map": {"standby": 0, "working": 1},
-      "state_value_map": {"0": "standby", "1": "working"},
-      "extra_payload": {"source": "smart_home"},
+      "options": [
+        "standby",
+        "working"
+      ],
+      "value_map": {
+        "standby": 0,
+        "working": 1
+      },
+      "state_value_map": {
+        "0": "standby",
+        "1": "working"
+      },
+      "extra_payload": {
+        "source": "smart_home"
+      },
       "icon": "mdi:play-pause",
       "category": "control"
     },
@@ -131,13 +197,135 @@
       "category": "sound"
     },
     {
+      "path": "MowerState.blade_height",
+      "name": "Blade Height",
+      "entity_type": "number",
+      "command_topic": "mower_target_cmd",
+      "command_key": "target",
+      "min": 20,
+      "max": 100,
+      "step": 1,
+      "unit": "mm",
+      "icon": "mdi:arrow-up-down",
+      "enabled_by_default": false,
+      "category": "mower",
+      "compatible_head_types": [3, 5]
+    },
+    {
+      "path": "MowerState.blade_speed",
+      "name": "Blade Speed",
+      "entity_type": "number",
+      "command_topic": "mower_speed_cmd",
+      "command_key": "state",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "%",
+      "icon": "mdi:speedometer",
+      "enabled_by_default": false,
+      "category": "mower",
+      "compatible_head_types": [3, 5]
+    },
+    {
+      "path": "RunningStatusMSG.chute_angle",
+      "name": "Chute Angle",
+      "entity_type": "number",
+      "command_topic": "cmd_set_chute_angle",
+      "command_key": "cmd",
+      "min": 0,
+      "max": 180,
+      "step": 1,
+      "unit": "°",
+      "icon": "mdi:angle-acute",
+      "enabled_by_default": false,
+      "category": "snow",
+      "compatible_head_types": [1]
+    },
+    {
       "path": "LedInfoMSG.led_head",
-      "name": "Headlight",
+      "name": "Head Light",
       "entity_type": "switch",
       "command_topic": "light_ctrl",
       "command_builder": "light_switch",
       "icon": "mdi:car-light-high",
       "category": "light"
+    },
+    {
+      "path": "StateMSG.person_detect_status",
+      "name": "Person Detection",
+      "entity_type": "switch",
+      "command_topic": "set_person_detect",
+      "command_builder": "person_detection_switch",
+      "icon": "mdi:account-search",
+      "enabled_by_default": false,
+      "category": "safety"
+    },
+    {
+      "path": "StateMSG.robot_follow_state",
+      "name": "Follow Mode",
+      "entity_type": "switch",
+      "command_topic": "set_follow_state",
+      "command_builder": "state_int_switch",
+      "icon": "mdi:account-arrow-right",
+      "enabled_by_default": false,
+      "category": "control"
+    },
+    {
+      "path": "enable_elec_fence",
+      "name": "Geo Fence",
+      "entity_type": "switch",
+      "command_topic": "save_global_params",
+      "command_builder": "geo_fence_switch",
+      "icon": "mdi:fence",
+      "enabled_by_default": false,
+      "category": "safety"
+    },
+    {
+      "path": "map_obstacle_switch",
+      "name": "Ignore Obstacles",
+      "entity_type": "switch",
+      "command_topic": "set_map_obstacle_switch",
+      "command_builder": "ignore_obstacles_switch",
+      "icon": "mdi:map-marker-off",
+      "enabled_by_default": false,
+      "category": "safety"
+    },
+    {
+      "path": "StateMSG.child_lock_status",
+      "name": "Child Lock",
+      "entity_type": "switch",
+      "command_topic": "set_child_lock",
+      "command_builder": "state_bool_switch",
+      "icon": "mdi:lock",
+      "category": "safety"
+    },
+    {
+      "path": "__action__.ignore_obstacle_zones",
+      "name": "Ignore Obstacle Zones",
+      "entity_type": "button",
+      "command_topic": "ignore_obstacles",
+      "command_builder": "ignore_obstacle_zones",
+      "icon": "mdi:map-marker-remove",
+      "enabled_by_default": false,
+      "category": "safety"
+    },
+    {
+      "path": "__action__.play_sound",
+      "name": "Play Sound",
+      "entity_type": "button",
+      "command_topic": "song_cmd",
+      "command_builder": "play_sound",
+      "icon": "mdi:volume-source",
+      "category": "sound"
+    },
+    {
+      "path": "__action__.emergency_stop",
+      "name": "Emergency Stop",
+      "entity_type": "button",
+      "command_topic": "stop",
+      "command_builder": "empty_payload",
+      "icon": "mdi:octagon",
+      "category": "safety"
     }
   ],
   "fields": [
@@ -147,6 +335,107 @@
       "entity_type": "sensor",
       "device_class": "battery",
       "unit": "%",
+      "custom_extractor": "battery_capacity",
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.voltage",
+      "name": "Battery Voltage",
+      "entity_type": "sensor",
+      "device_class": "voltage",
+      "unit": "V",
+      "icon": "mdi:sine-wave",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.current",
+      "name": "Battery Current",
+      "entity_type": "sensor",
+      "device_class": "current",
+      "unit": "A",
+      "icon": "mdi:current-dc",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.health",
+      "name": "Battery Health",
+      "entity_type": "sensor",
+      "device_class": "battery",
+      "unit": "%",
+      "icon": "mdi:battery-heart",
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature1",
+      "name": "Battery Cell Temperature 1",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature2",
+      "name": "Battery Cell Temperature 2",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature3",
+      "name": "Battery Cell Temperature 3",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature4",
+      "name": "Battery Cell Temperature 4",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature5",
+      "name": "Battery Cell Temperature 5",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "BatteryMSG.temperature6",
+      "name": "Battery Cell Temperature 6",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "enabled_by_default": false,
+      "category": "battery"
+    },
+    {
+      "path": "__computed__.charging_power",
+      "name": "Charging Power",
+      "entity_type": "sensor",
+      "device_class": "power",
+      "unit": "W",
+      "icon": "mdi:flash",
+      "custom_extractor": "charging_power",
+      "enabled_by_default": false,
       "category": "battery"
     },
     {
@@ -158,10 +447,44 @@
       "category": "battery"
     },
     {
+      "path": "BatteryMSG.temp_err",
+      "name": "Battery Temp Error",
+      "entity_type": "binary_sensor",
+      "device_class": "problem",
+      "icon": "mdi:thermometer-alert",
+      "category": "battery"
+    },
+    {
       "path": "StateMSG.error_code",
       "name": "Error Code",
       "entity_type": "sensor",
       "icon": "mdi:alert-circle-outline",
+      "category": "status"
+    },
+    {
+      "path": "HeadAndVersionCheck.head_firmware_version",
+      "name": "Head Firmware Version",
+      "entity_type": "sensor",
+      "icon": "mdi:chip",
+      "category": "status"
+    },
+    {
+      "path": "BodyVersionMsg.body_fw_version",
+      "name": "Body Firmware Version",
+      "entity_type": "sensor",
+      "icon": "mdi:chip",
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.working_state",
+      "name": "Activity",
+      "entity_type": "sensor",
+      "device_class": "enum",
+      "icon": "mdi:run",
+      "value_map": {
+        "0": "standby",
+        "1": "working"
+      },
       "category": "status"
     },
     {
@@ -174,6 +497,34 @@
         "0": "standby",
         "1": "working"
       },
+      "category": "status"
+    },
+    {
+      "path": "WifiInfo.signal",
+      "name": "WiFi RSSI",
+      "entity_type": "sensor",
+      "device_class": "signal_strength",
+      "unit": "dBm",
+      "icon": "mdi:wifi",
+      "category": "status"
+    },
+    {
+      "path": "net_module_status.lte_rssi",
+      "name": "4G RSSI",
+      "entity_type": "sensor",
+      "device_class": "signal_strength",
+      "unit": "dBm",
+      "icon": "mdi:signal-cellular-3",
+      "category": "status"
+    },
+    {
+      "path": "halow_status.strength",
+      "name": "HaLow RSSI",
+      "entity_type": "sensor",
+      "device_class": "signal_strength",
+      "unit": "dBm",
+      "icon": "mdi:access-point-network",
+      "enabled_by_default": false,
       "category": "status"
     },
     {
@@ -251,6 +602,15 @@
       "category": "status"
     },
     {
+      "path": "StateMSG.on_going_planning",
+      "name": "Problem",
+      "entity_type": "binary_sensor",
+      "device_class": "problem",
+      "icon": "mdi:alert-circle",
+      "custom_extractor": "planning_problem",
+      "category": "status"
+    },
+    {
       "path": "StateMSG.planning_paused",
       "name": "Auto Plan Pause Status",
       "entity_type": "sensor",
@@ -295,16 +655,37 @@
       "category": "status"
     },
     {
+      "path": "StateMSG.stuck",
+      "name": "Stuck",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:robot-confused",
+      "custom_extractor": "nonzero_threshold",
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.obstacle",
+      "name": "Obstacle Detected",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:hand-back-right-outline",
+      "enabled_by_default": false,
+      "category": "status"
+    },
+    {
       "path": "StateMSG.enable_sound",
       "name": "Sound Enabled",
       "entity_type": "binary_sensor",
       "icon": "mdi:volume-high",
-      "value_map": {"False": "false", "True": "true", "0": "false", "1": "true"},
+      "value_map": {
+        "False": "false",
+        "True": "true",
+        "0": "false",
+        "1": "true"
+      },
       "category": "sound"
     },
     {
       "path": "LedInfoMSG.led_head",
-      "name": "Headlight",
+      "name": "Head Light",
       "entity_type": "binary_sensor",
       "icon": "mdi:car-light-high",
       "custom_extractor": "positive_threshold",
@@ -318,6 +699,46 @@
       "icon": "mdi:volume-medium",
       "custom_extractor": "volume_scale",
       "category": "sound"
+    },
+    {
+      "path": "RunningStatusMSG.rain_sensor_data",
+      "name": "Rain Sensor",
+      "entity_type": "sensor",
+      "icon": "mdi:weather-rainy",
+      "enabled_by_default": false,
+      "category": "status"
+    },
+    {
+      "path": "mower_head_info01.rain_sensor",
+      "name": "Rain Detected",
+      "entity_type": "binary_sensor",
+      "device_class": "moisture",
+      "icon": "mdi:weather-rainy",
+      "custom_extractor": "positive_threshold",
+      "category": "status"
+    },
+    {
+      "path": "EletricMSG.body_ambient_ntc_temp",
+      "name": "Ambient Temperature",
+      "entity_type": "sensor",
+      "device_class": "temperature",
+      "unit": "°C",
+      "icon": "mdi:thermometer",
+      "category": "environment"
+    },
+    {
+      "path": "StateMSG.person_detect_status",
+      "name": "Person Detection",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:account-search",
+      "category": "status"
+    },
+    {
+      "path": "StateMSG.robot_follow_state",
+      "name": "Follow Mode",
+      "entity_type": "binary_sensor",
+      "icon": "mdi:account-arrow-right",
+      "category": "status"
     },
     {
       "path": "RTKMSG.status",
@@ -355,8 +776,16 @@
       "path": "CombinedOdom.phi",
       "name": "Heading",
       "entity_type": "sensor",
-      "unit": "\u00b0",
+      "unit": "°",
       "icon": "mdi:compass",
+      "enabled_by_default": false,
+      "category": "position"
+    },
+    {
+      "path": "RTKMSG.sat_num",
+      "name": "GPS Satellites",
+      "entity_type": "sensor",
+      "icon": "mdi:satellite-variant",
       "enabled_by_default": false,
       "category": "position"
     }

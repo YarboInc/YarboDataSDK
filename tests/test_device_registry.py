@@ -92,10 +92,10 @@ class TestValueMap:
 
     def test_charging_value_map(self):
         fields = get_field_definitions("yarbo_Y")
-        ch = next(f for f in fields if f.path == "StateMSG.charging_status")
+        ch = next(f for f in fields if f.path == "BatteryMSG.status")
         assert ch.entity_type == "binary_sensor"
-        assert ch.value_map["1"] == "true"
-        assert ch.value_map["0"] == "false"
+        assert ch.device_class == "battery_charging"
+        assert ch.custom_extractor == "charging_threshold"
 
 
 # ---- TC-004: Yarbo Y field presence (updated for Bay-09 changes) ----
@@ -105,7 +105,7 @@ class TestYarboYFieldPresence:
         fields = get_field_definitions("yarbo_Y")
         paths = [f.path for f in fields]
         assert "BatteryMSG.capacity" in paths
-        assert "StateMSG.charging_status" in paths
+        assert "BatteryMSG.status" in paths
         assert "StateMSG.error_code" in paths
         assert "HeartBeatMSG.working_state" in paths
         assert "HeadMsg.head_type" in paths
@@ -117,6 +117,10 @@ class TestYarboYFieldPresence:
     def test_has_new_fields(self):
         fields = get_field_definitions("yarbo_Y")
         paths = [f.path for f in fields]
+        assert "BatteryMSG.voltage" in paths
+        assert "BatteryMSG.current" in paths
+        assert "BatteryMSG.health" in paths
+        assert "__computed__.charging_power" in paths
         assert "route_priority" in paths
         assert "StateMSG.on_going_planning" in paths
         assert "StateMSG.planning_paused" in paths
@@ -124,18 +128,30 @@ class TestYarboYFieldPresence:
         assert "StateMSG.enable_sound" in paths
         assert "LedInfoMSG.led_head" in paths
         assert "StateMSG.volume" in paths
+        assert "HeadAndVersionCheck.head_firmware_version" in paths
+        assert "BodyVersionMsg.body_fw_version" in paths
+        assert "StateMSG.working_state" in paths
+        assert "net_module_status.lte_rssi" in paths
+        assert "halow_status.strength" in paths
+        assert "RunningStatusMSG.rain_sensor_data" in paths
+        assert "StateMSG.person_detect_status" in paths
+        assert "StateMSG.robot_follow_state" in paths
+        assert "BatteryMSG.temp_err" in paths
+        assert "StateMSG.stuck" in paths
+        assert "StateMSG.obstacle" in paths
+        assert "RTKMSG.sat_num" in paths
 
     def test_deleted_fields_absent(self):
         fields = get_field_definitions("yarbo_Y")
         paths = [f.path for f in fields]
         deleted = [
-            "BatteryMSG.status", "BatteryMSG.temp_err",
-            "StateMSG.working_state", "base_status",
+            "StateMSG.charging_status",
+            "base_status",
             "combined_odom_confidence",
-            "RTKMSG.status", "RTKMSG.heading_status", "rtcm_age",
-            "RunningStatusMSG.chute_angle",
+            "RTKMSG.heading_status", "rtcm_age",
             "ultrasonic_msg.lf_dis", "ultrasonic_msg.mt_dis", "ultrasonic_msg.rf_dis",
             "__device__.online",
+            "__computed__.charging_time_remaining",
         ]
         for d in deleted:
             assert d not in paths, f"Deleted field '{d}' still present"
@@ -175,11 +191,38 @@ class TestYarboYFieldPresence:
         assert "Charging" in rs.value_map.values()
         assert "Error: Stuck" in rs.value_map.values()
 
+    def test_stuck_uses_nonzero_threshold(self):
+        fields = get_field_definitions("yarbo_Y")
+        stuck = next(f for f in fields if f.path == "StateMSG.stuck")
+        assert stuck.custom_extractor == "nonzero_threshold"
+
+    def test_charging_power_disabled_by_default(self):
+        fields = get_field_definitions("yarbo_Y")
+        cp = next(f for f in fields if f.path == "__computed__.charging_power")
+        assert cp.enabled_by_default is False
+
     def test_default_enabled_strategy(self):
-        """Only CombinedOdom x/y/phi should be disabled by default."""
+        """Diagnostic/detail fields should be disabled by default."""
         fields = get_field_definitions("yarbo_Y")
         disabled = [f.path for f in fields if not f.enabled_by_default]
-        assert set(disabled) == {"CombinedOdom.x", "CombinedOdom.y", "CombinedOdom.phi"}
+        assert set(disabled) == {
+            "BatteryMSG.voltage",
+            "BatteryMSG.current",
+            "BatteryMSG.temperature1",
+            "BatteryMSG.temperature2",
+            "BatteryMSG.temperature3",
+            "BatteryMSG.temperature4",
+            "BatteryMSG.temperature5",
+            "BatteryMSG.temperature6",
+            "__computed__.charging_power",
+            "halow_status.strength",
+            "StateMSG.obstacle",
+            "RunningStatusMSG.rain_sensor_data",
+            "CombinedOdom.x",
+            "CombinedOdom.y",
+            "CombinedOdom.phi",
+            "RTKMSG.sat_num",
+        }
 
 
 # ---- TC-005: Backward compatibility ----
@@ -241,22 +284,24 @@ class TestUnknownType:
     def test_unknown_type_returns_empty(self):
         assert get_field_definitions("unknown") == []
 
-    def test_unknown_device_type_returns_none(self):
-        assert get_device_type("nonexistent") is None
+    def test_unknown_device_type_falls_back_to_yarbo_y(self):
+        dt = get_device_type("nonexistent")
+        assert dt is not None
+        assert dt.type_id == "yarbo_Y"
 
 
 # ---- TC-008: Field count ----
 
 class TestFieldCount:
-    def test_yarbo_y_has_17_fields(self):
-        """17 fields after Bay-09 changes (added RTK Signal)."""
+    def test_yarbo_y_has_43_fields(self):
+        """43 fields after adding battery cell temperature sensors."""
         fields = get_field_definitions("yarbo_Y")
-        assert len(fields) == 17, f"Expected 17 fields, got {len(fields)}"
+        assert len(fields) == 43, f"Expected 43 fields, got {len(fields)}"
 
-    def test_yarbo_y_has_4_control_fields(self):
-        """4 control fields after Bay-09 changes."""
+    def test_yarbo_y_has_15_control_fields(self):
+        """15 control fields after adding Emergency Stop button."""
         fields = get_control_field_definitions("yarbo_Y")
-        assert len(fields) == 4, f"Expected 4 control fields, got {len(fields)}"
+        assert len(fields) == 15, f"Expected 15 control fields, got {len(fields)}"
 
 
 # ---- TC-009: extract_field with MQTT message sample ----
@@ -332,8 +377,18 @@ class TestControlTopicsParsed:
             "read_all_plan", "get_device_msg", "start_plan",
             "pause", "resume", "stop",
             "cmd_recharge", "set_sound_param", "light_ctrl",
+            "set_person_detect", "set_follow_state",
+            "save_global_params", "set_map_obstacle_switch", "ignore_obstacles",
+            "set_child_lock", "song_cmd",
+            "mower_target_cmd", "mower_speed_cmd", "cmd_set_chute_angle",
         ]:
             assert expected in names, f"Missing control topic: {expected}"
+
+    def test_removed_topics_absent(self):
+        dt = get_device_type("yarbo_Y")
+        names = [ct.name for ct in dt.control_topics]
+        assert "smart_vision_control" not in names
+        assert "cmd_buzzer" not in names
 
 
 # ---- TC-017: control_fields parsed correctly ----
@@ -379,12 +434,103 @@ class TestControlFieldsParsed:
         assert vol.step == 1
         assert vol.unit == "%"
 
-    def test_headlight_control_field(self):
+    def test_blade_height_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        blade_height = next(f for f in fields if f.path == "MowerState.blade_height")
+        assert blade_height.entity_type == "number"
+        assert blade_height.command_topic == "mower_target_cmd"
+        assert blade_height.command_key == "target"
+        assert blade_height.enabled_by_default is False
+        assert blade_height.compatible_head_types == [3, 5]
+
+    def test_blade_speed_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        blade_speed = next(f for f in fields if f.path == "MowerState.blade_speed")
+        assert blade_speed.entity_type == "number"
+        assert blade_speed.command_topic == "mower_speed_cmd"
+        assert blade_speed.command_key == "state"
+        assert blade_speed.enabled_by_default is False
+        assert blade_speed.compatible_head_types == [3, 5]
+
+    def test_chute_angle_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        chute_angle = next(f for f in fields if f.path == "RunningStatusMSG.chute_angle")
+        assert chute_angle.entity_type == "number"
+        assert chute_angle.command_topic == "cmd_set_chute_angle"
+        assert chute_angle.command_key == "cmd"
+        assert chute_angle.enabled_by_default is False
+        assert chute_angle.compatible_head_types == [1]
+
+    def test_roof_lights_control_field(self):
         fields = get_control_field_definitions("yarbo_Y")
         hl = next(f for f in fields if f.path == "LedInfoMSG.led_head")
         assert hl.entity_type == "switch"
         assert hl.command_topic == "light_ctrl"
         assert hl.command_builder == "light_switch"
+
+    def test_person_detection_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        pd = next(f for f in fields if f.path == "StateMSG.person_detect_status")
+        assert pd.entity_type == "switch"
+        assert pd.command_topic == "set_person_detect"
+        assert pd.command_builder == "person_detection_switch"
+
+    def test_geo_fence_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        gf = next(f for f in fields if f.path == "enable_elec_fence")
+        assert gf.entity_type == "switch"
+        assert gf.command_topic == "save_global_params"
+        assert gf.command_builder == "geo_fence_switch"
+
+    def test_follow_mode_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        fm = next(f for f in fields if f.path == "StateMSG.robot_follow_state")
+        assert fm.entity_type == "switch"
+        assert fm.command_topic == "set_follow_state"
+        assert fm.command_builder == "state_int_switch"
+
+    def test_ignore_obstacles_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        io = next(f for f in fields if f.path == "map_obstacle_switch")
+        assert io.entity_type == "switch"
+        assert io.command_topic == "set_map_obstacle_switch"
+        assert io.command_builder == "ignore_obstacles_switch"
+
+    def test_child_lock_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        cl = next(f for f in fields if f.path == "StateMSG.child_lock_status")
+        assert cl.entity_type == "switch"
+        assert cl.command_topic == "set_child_lock"
+        assert cl.command_builder == "state_bool_switch"
+
+    def test_ignore_obstacle_zones_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        ioz = next(f for f in fields if f.path == "__action__.ignore_obstacle_zones")
+        assert ioz.entity_type == "button"
+        assert ioz.command_topic == "ignore_obstacles"
+        assert ioz.command_builder == "ignore_obstacle_zones"
+
+    def test_play_sound_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        ps = next(f for f in fields if f.path == "__action__.play_sound")
+        assert ps.entity_type == "button"
+        assert ps.command_topic == "song_cmd"
+        assert ps.command_builder == "play_sound"
+        assert ps.enabled_by_default is True
+
+    def test_emergency_stop_control_field(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        es = next(f for f in fields if f.path == "__action__.emergency_stop")
+        assert es.entity_type == "button"
+        assert es.command_topic == "stop"
+        assert es.command_builder == "empty_payload"
+        assert es.enabled_by_default is True
+
+    def test_removed_control_fields_absent(self):
+        fields = get_control_field_definitions("yarbo_Y")
+        paths = [f.path for f in fields]
+        assert "HubInfoMSG.head_camera_power" not in paths
+        assert "HubInfoMSG.loud" not in paths
 
     def test_unknown_type_returns_empty(self):
         assert get_control_field_definitions("nonexistent") == []
@@ -414,6 +560,16 @@ class TestResolveControlTopic:
         assert resolve_control_topic("SN1", "yarbo_Y", "cmd_recharge") == "snowbot/SN1/app/cmd_recharge"
         assert resolve_control_topic("SN1", "yarbo_Y", "set_sound_param") == "snowbot/SN1/app/set_sound_param"
         assert resolve_control_topic("SN1", "yarbo_Y", "light_ctrl") == "snowbot/SN1/app/light_ctrl"
+        assert resolve_control_topic("SN1", "yarbo_Y", "set_person_detect") == "snowbot/SN1/app/set_person_detect"
+        assert resolve_control_topic("SN1", "yarbo_Y", "set_follow_state") == "snowbot/SN1/app/set_follow_state"
+        assert resolve_control_topic("SN1", "yarbo_Y", "save_global_params") == "snowbot/SN1/app/save_global_params"
+        assert resolve_control_topic("SN1", "yarbo_Y", "set_map_obstacle_switch") == "snowbot/SN1/app/set_map_obstacle_switch"
+        assert resolve_control_topic("SN1", "yarbo_Y", "ignore_obstacles") == "snowbot/SN1/app/ignore_obstacles"
+        assert resolve_control_topic("SN1", "yarbo_Y", "set_child_lock") == "snowbot/SN1/app/set_child_lock"
+        assert resolve_control_topic("SN1", "yarbo_Y", "song_cmd") == "snowbot/SN1/app/song_cmd"
+        assert resolve_control_topic("SN1", "yarbo_Y", "mower_target_cmd") == "snowbot/SN1/app/mower_target_cmd"
+        assert resolve_control_topic("SN1", "yarbo_Y", "mower_speed_cmd") == "snowbot/SN1/app/mower_speed_cmd"
+        assert resolve_control_topic("SN1", "yarbo_Y", "cmd_set_chute_angle") == "snowbot/SN1/app/cmd_set_chute_angle"
 
     def test_unknown_topic_name_raises(self):
         with pytest.raises(YarboSDKError, match="No control topic"):
@@ -440,7 +596,7 @@ class TestControlFieldValidation:
         cf = {
             "path": "test.field",
             "name": "Test",
-            "entity_type": "button",
+            "entity_type": "sensor",
             "command_topic": "some_topic",
         }
         bad_json = tmp_path / "bad.json"

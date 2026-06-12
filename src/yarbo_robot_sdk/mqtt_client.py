@@ -1,7 +1,9 @@
 """MQTT client — connection, subscription, callback dispatch, auto-reconnect."""
 
 import logging
+import secrets
 import time as _time
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
@@ -17,8 +19,76 @@ from yarbo_robot_sdk.exceptions import MqttConnectionError
 DEFAULT_CLIENTID_PREFIX = "HA_"
 
 
+class CredentialsProvider(ABC):
+    """Strategy for MQTT client_id + (username, password) and post-refresh values.
+
+    Two concrete implementations exist:
+      * ``LegacyCredentialsProvider`` — old shared EMQX broker. username=JWT,
+        password="", client_id=``HA_{email}_{unix_ts}``.
+      * ``NewBrokerCredentialsProvider`` — new EMQX Dedicated broker.
+        username=email, password=JWT, client_id=``HA_{email}_{rand4}``.
+
+    The provider is injected into ``MqttClient`` so the transport layer remains
+    broker-agnostic and the two routing paths can share the same code.
+    """
+
+    @abstractmethod
+    def client_id(self) -> str:
+        """Generate a fresh client_id for a new MQTT connection."""
+
+    @abstractmethod
+    def initial_credentials(self) -> tuple[str, str]:
+        """Return ``(username, password)`` for the first connection attempt."""
+
+    @abstractmethod
+    def credentials_after_refresh(self) -> tuple[str, str]:
+        """Return ``(username, password)`` after ``AuthManager.refresh()``."""
+
+
+class LegacyCredentialsProvider(CredentialsProvider):
+    """Old broker: HTTP AUTH via username=JWT, password=""."""
+
+    def __init__(self, auth: AuthManager):
+        self._auth = auth
+
+    def client_id(self) -> str:
+        # Append a random suffix in addition to the timestamp: rapid reconnects
+        # within the same second would otherwise collide on client_id, and the
+        # broker kicks the older session — producing connect/disconnect churn.
+        rand4 = f"{secrets.randbelow(10000):04d}"
+        return (
+            f"{DEFAULT_CLIENTID_PREFIX}{self._auth.username}"
+            f"_{int(_time.time())}_{rand4}"
+        )
+
+    def initial_credentials(self) -> tuple[str, str]:
+        return (self._auth.token or "", "")
+
+    def credentials_after_refresh(self) -> tuple[str, str]:
+        return (self._auth.token or "", "")
+
+
+class NewBrokerCredentialsProvider(CredentialsProvider):
+    """New EMQX Dedicated broker: username=email, password=JWT."""
+
+    def __init__(self, auth: AuthManager):
+        self._auth = auth
+
+    def client_id(self) -> str:
+        rand4 = f"{secrets.randbelow(10000):04d}"
+        return f"{DEFAULT_CLIENTID_PREFIX}{self._auth.username}_{rand4}"
+
+    def initial_credentials(self) -> tuple[str, str]:
+        return (self._auth.username or "", self._auth.token or "")
+
+    def credentials_after_refresh(self) -> tuple[str, str]:
+        return (self._auth.username or "", self._auth.token or "")
+
+
 class MqttClient:
-    """Manages MQTT connection using HTTP AUTH (username=JWT, password="")."""
+    """Manages an MQTT connection. Credentials and client_id come from a
+    ``CredentialsProvider`` so a single transport supports multiple brokers.
+    """
 
     def __init__(
         self,
@@ -28,34 +98,79 @@ class MqttClient:
         use_tls: bool = True,
         keepalive: int = MQTT_KEEPALIVE,
         client_id_prefix: str = DEFAULT_CLIENTID_PREFIX,
+        credentials_provider: CredentialsProvider | None = None,
+        name: str = "mqtt",
     ):
         self._auth = auth_manager
+        # Human-readable broker label (e.g. "legacy" / "new") used to make
+        # connection logs distinguishable when two brokers run side by side.
+        self._name = name
         self._host = host
         self._port = port
         self._use_tls = use_tls
         self._keepalive = keepalive
+        # ``client_id_prefix`` is retained for backward compatibility with tests
+        # that pass a custom prefix. It is honoured only when no explicit
+        # ``credentials_provider`` is supplied (i.e. the default legacy path).
         self._client_id_prefix = client_id_prefix
+        self._credentials: CredentialsProvider = (
+            credentials_provider
+            if credentials_provider is not None
+            else LegacyCredentialsProvider(auth_manager)
+        )
         self._client: mqtt.Client | None = None
         self._callbacks: dict[str, list[Callable]] = {}
         self._connected = False
 
     def connect(self) -> None:
-        """Establish MQTT connection. username=JWT, password=""."""
+        """Establish MQTT connection using the configured credentials provider."""
         if not self._auth.is_authenticated:
             raise MqttConnectionError("Not authenticated. Call login() first.")
 
+        # Tear down any existing client first so a reconnect attempt never
+        # leaves an orphaned paho loop_start() thread auto-reconnecting in the
+        # background. Without this, repeated connect() calls (e.g. from
+        # _ensure_*_mqtt while is_connected is briefly False) accumulate
+        # multiple live connections to the same broker.
+        if self._client is not None:
+            try:
+                self._client.loop_stop()
+                self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
+            self._connected = False
+
         try:
-            client_id = (
-                f"{self._client_id_prefix}"
-                f"{self._auth.username}_{int(_time.time())}"
+            client_id = self._credentials.client_id()
+            # Honour the legacy ``client_id_prefix`` constructor arg if a caller
+            # overrode it AND we're using the default legacy provider.
+            if (
+                isinstance(self._credentials, LegacyCredentialsProvider)
+                and self._client_id_prefix != DEFAULT_CLIENTID_PREFIX
+            ):
+                rand4 = f"{secrets.randbelow(10000):04d}"
+                client_id = (
+                    f"{self._client_id_prefix}"
+                    f"{self._auth.username}_{int(_time.time())}_{rand4}"
+                )
+
+            username, password = self._credentials.initial_credentials()
+            logger.info(
+                "MQTT[%s] connecting → %s:%s (tls=%s) client_id=%s",
+                self._name,
+                self._host,
+                self._port,
+                self._use_tls,
+                client_id,
             )
             self._client = mqtt.Client(
                 client_id=client_id,
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             )
             self._client.username_pw_set(
-                username=self._auth.token,
-                password="",
+                username=username,
+                password=password,
             )
 
             if self._use_tls:
@@ -83,6 +198,7 @@ class MqttClient:
         if topic not in self._callbacks:
             self._callbacks[topic] = []
             self._client.subscribe(topic)
+            logger.info("MQTT[%s] subscribe → %s", self._name, topic)
         self._callbacks[topic].append(callback)
 
     def publish(self, topic: str, payload: bytes, qos: int = 0) -> None:
@@ -138,11 +254,24 @@ class MqttClient:
 
         if success:
             self._connected = True
-            logger.info(f"MQTT connected (rc={rc})")
+            logger.info(
+                "MQTT[%s] connected to %s:%s (rc=%s); re-subscribing %d topic(s)",
+                self._name,
+                self._host,
+                self._port,
+                rc,
+                len(self._callbacks),
+            )
             for topic in self._callbacks:
                 client.subscribe(topic)
         else:
-            logger.warning(f"MQTT connect failed (rc={rc})")
+            logger.warning(
+                "MQTT[%s] connect failed to %s:%s (rc=%s)",
+                self._name,
+                self._host,
+                self._port,
+                rc,
+            )
 
     def _on_disconnect(
         self,
@@ -153,14 +282,21 @@ class MqttClient:
         properties: Any = None,
     ) -> None:
         self._connected = False
-        logger.warning(f"MQTT disconnected (rc={rc})")
+        logger.warning(
+            "MQTT[%s] disconnected from %s:%s (rc=%s)",
+            self._name,
+            self._host,
+            self._port,
+            rc,
+        )
         # rc != 0 means unexpected disconnect (possibly token expired, kicked by EMQX)
         if rc != 0:
             try:
                 self._auth.refresh()
+                username, password = self._credentials.credentials_after_refresh()
                 client.username_pw_set(
-                    username=self._auth.token,
-                    password="",
+                    username=username,
+                    password=password,
                 )
                 # paho will auto-reconnect via loop_start background thread
             except Exception:

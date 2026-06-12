@@ -47,13 +47,13 @@ class FieldDefinition:
 
 @dataclass
 class ControlFieldDefinition:
-    """Field definition for a controllable HA entity (select, switch, number).
+    """Field definition for a controllable HA entity (select, switch, number, button).
 
     Attributes:
         path: Dot-separated path to read the current state value from MQTT data
               (e.g. "HeartBeatMSG.working_state").
         name: Display name for the entity.
-        entity_type: HA entity type — "select", "switch", or "number".
+        entity_type: HA entity type — "select", "switch", "number", or "button".
         command_topic: Name reference to a control_topic entry (used to resolve
                        the publish topic template, e.g. "set_working_state").
         command_key: Key used in the command payload dict for select entities
@@ -71,6 +71,8 @@ class ControlFieldDefinition:
         icon: MDI icon (e.g. "mdi:play-pause").
         enabled_by_default: Whether the entity is enabled by default in HA.
         category: Field grouping for organization (e.g. "control").
+        compatible_head_types: Optional list of HeadMsg.head_type values that
+                               this control applies to.
     """
 
     path: str
@@ -90,3 +92,4 @@ class ControlFieldDefinition:
     icon: str | None = None
     enabled_by_default: bool = True
     category: str | None = None
+    compatible_head_types: list[int] | None = None

@@ -17,6 +17,23 @@ from yarbo_robot_sdk.exceptions import (
     YarboSDKError,
 )
 from yarbo_robot_sdk.models import Device
+from yarbo_robot_sdk.modules import (
+    BlowerModule,
+    CoreModule,
+    MowerModule,
+    PlowModule,
+    SmartAssistModule,
+    SnowBlowerModule,
+    TrimmerModule,
+    YarboModule,
+)
+from yarbo_robot_sdk.public_types import (
+    CommandPayload,
+    DataFeedbackCallback,
+    DeviceData,
+    RawMqttCallback,
+    StatusCallback,
+)
 
 __all__ = [
     "YarboClient",
@@ -24,6 +41,19 @@ __all__ = [
     "AuthenticationError",
     "TokenExpiredError",
     "Device",
+    "DeviceData",
+    "CommandPayload",
+    "RawMqttCallback",
+    "StatusCallback",
+    "DataFeedbackCallback",
+    "YarboModule",
+    "CoreModule",
+    "MowerModule",
+    "SnowBlowerModule",
+    "BlowerModule",
+    "TrimmerModule",
+    "PlowModule",
+    "SmartAssistModule",
     "get_field_definitions",
     "get_control_field_definitions",
     "extract_field",

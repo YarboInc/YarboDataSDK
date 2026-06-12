@@ -1,12 +1,17 @@
-"""Tests for MqttClient — TC-010~015, TC-021~023."""
+"""Tests for MqttClient — TC-010~015, TC-021~023, TC-111~114."""
 
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from yarbo_robot_sdk.auth import AuthManager
 from yarbo_robot_sdk.exceptions import MqttConnectionError
-from yarbo_robot_sdk.mqtt_client import MqttClient
+from yarbo_robot_sdk.mqtt_client import (
+    LegacyCredentialsProvider,
+    MqttClient,
+    NewBrokerCredentialsProvider,
+)
 
 
 @pytest.fixture
@@ -45,7 +50,11 @@ class TestMqttConnect:
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
     def test_client_id_format(self, MockClient, mqtt_client):
-        """TC-021: client_id format is HA_{email}_{timestamp}."""
+        """TC-021: client_id format is HA_{email}_{timestamp}_{rand4}.
+
+        The random suffix prevents same-second reconnects from colliding on
+        client_id (which makes the broker kick the older session).
+        """
         mqtt_client.connect()
 
         call_kwargs = MockClient.call_args
@@ -53,12 +62,26 @@ class TestMqttConnect:
 
         assert client_id.startswith("HA_"), f"client_id should start with 'HA_', got '{client_id}'"
         assert "user@test.com" in client_id, f"client_id should contain email, got '{client_id}'"
-        # Format: HA_{email}_{timestamp}
-        parts = client_id.split("_", 2)  # HA, user@test.com, timestamp
-        assert len(parts) >= 3, f"client_id should have at least 3 parts, got '{client_id}'"
-        # Last part should be a numeric timestamp
-        timestamp_part = parts[-1]
-        assert timestamp_part.isdigit(), f"Last part should be timestamp, got '{timestamp_part}'"
+        # Format: HA_{email}_{timestamp}_{rand4} — email has no underscore.
+        parts = client_id.split("_")
+        assert len(parts) == 4, f"client_id should have 4 parts, got '{client_id}'"
+        timestamp_part, rand_part = parts[2], parts[3]
+        assert timestamp_part.isdigit(), f"3rd part should be timestamp, got '{timestamp_part}'"
+        assert rand_part.isdigit() and len(rand_part) == 4, (
+            f"4th part should be a 4-digit random suffix, got '{rand_part}'"
+        )
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_reconnect_tears_down_previous_client(self, MockClient, mqtt_client):
+        """A second connect() stops and disconnects the prior paho client so no
+        orphaned loop_start() thread keeps auto-reconnecting in the background."""
+        mock_instance = MockClient.return_value
+        mqtt_client.connect()
+        mqtt_client.connect()
+
+        mock_instance.loop_stop.assert_called_once()
+        mock_instance.disconnect.assert_called_once()
+        assert mock_instance.loop_start.call_count == 2
 
     @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
     def test_custom_client_id_prefix(self, MockClient, auth_manager, mqtt_config):
@@ -236,3 +259,86 @@ class TestMqttPublish:
         """TC-008: publish before connect raises MqttConnectionError."""
         with pytest.raises(MqttConnectionError):
             mqtt_client.publish("snowbot/SN123/app/set_working_state", b"data")
+
+
+class TestNewBrokerCredentials:
+    """TC-111 ~ TC-114: new EMQX Dedicated broker credentials strategy."""
+
+    def test_client_id_format_is_email_with_rand4(self, auth_manager):
+        """TC-111: client_id is HA_{email}_{4-digit-zero-padded}."""
+        provider = NewBrokerCredentialsProvider(auth_manager)
+        pattern = re.compile(r"^HA_user@test\.com_\d{4}$")
+        for _ in range(50):
+            assert pattern.match(provider.client_id())
+
+    def test_initial_credentials_is_email_and_token(self, auth_manager, mock_tokens):
+        """TC-112: username=email, password=JWT."""
+        provider = NewBrokerCredentialsProvider(auth_manager)
+        username, password = provider.initial_credentials()
+        assert username == "user@test.com"
+        assert password == mock_tokens["token"]
+
+    def test_legacy_credentials_unchanged(self, auth_manager, mock_tokens):
+        """TC-113: regression — legacy provider is HA_{email}_{ts}_{rand4}, JWT/empty.
+
+        The trailing rand4 prevents same-second reconnects from colliding on
+        client_id (which makes the broker kick the older session).
+        """
+        provider = LegacyCredentialsProvider(auth_manager)
+        client_id = provider.client_id()
+        assert re.match(r"^HA_user@test\.com_\d+_\d{4}$", client_id)
+        ts, rand = client_id.rsplit("_", 2)[-2:]
+        assert ts.isdigit()
+        assert len(ts) >= 10  # Unix timestamp, much longer than 4 digits.
+        assert rand.isdigit() and len(rand) == 4
+
+        username, password = provider.initial_credentials()
+        assert username == mock_tokens["token"]
+        assert password == ""
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_new_broker_mqtt_client_connects_with_correct_credentials(
+        self, MockClient, auth_manager, mock_tokens
+    ):
+        """End-to-end: MqttClient with NewBrokerCredentialsProvider uses email+JWT."""
+        client = MqttClient(
+            auth_manager=auth_manager,
+            host="c4750009.ala.dedicated.aws.emqxcloud.com",
+            port=8883,
+            credentials_provider=NewBrokerCredentialsProvider(auth_manager),
+        )
+        mock_instance = MockClient.return_value
+        client.connect()
+
+        mock_instance.username_pw_set.assert_called_once_with(
+            username="user@test.com",
+            password=mock_tokens["token"],
+        )
+
+        call_kwargs = MockClient.call_args
+        client_id = call_kwargs.kwargs.get("client_id", "")
+        assert re.match(r"^HA_user@test\.com_\d{4}$", client_id)
+
+    @patch("yarbo_robot_sdk.mqtt_client.mqtt.Client")
+    def test_new_broker_refresh_keeps_email_username(
+        self, MockClient, auth_manager
+    ):
+        """TC-114: after refresh, username stays email, password becomes new token."""
+        client = MqttClient(
+            auth_manager=auth_manager,
+            host="c4750009.ala.dedicated.aws.emqxcloud.com",
+            port=8883,
+            credentials_provider=NewBrokerCredentialsProvider(auth_manager),
+        )
+        mock_instance = MockClient.return_value
+        client.connect()
+
+        new_token = "refreshed-jwt-token"
+        auth_manager._token = new_token
+
+        with patch.object(client._auth, "refresh"):
+            client._on_disconnect(mock_instance, None, None, 1)
+
+        last_call = mock_instance.username_pw_set.call_args
+        assert last_call.kwargs.get("username") == "user@test.com"
+        assert last_call.kwargs.get("password") == new_token

@@ -1,8 +1,15 @@
-"""Configuration provider. Priority: constructor params > cloud config endpoint."""
+"""Configuration provider. Priority: constructor params > cloud config > SDK defaults."""
 
 import requests
 
-from yarbo_robot_sdk.config import REQUEST_TIMEOUT, SDK_CONFIG_ENDPOINT
+from yarbo_robot_sdk.config import (
+    EMQX_MIGRATION_QUERY_URL,
+    NEW_MQTT_HOST,
+    NEW_MQTT_PORT,
+    NEW_MQTT_USE_TLS,
+    REQUEST_TIMEOUT,
+    SDK_CONFIG_ENDPOINT,
+)
 from yarbo_robot_sdk.exceptions import YarboSDKError
 
 
@@ -11,9 +18,27 @@ class ConfigProvider:
 
     Constructor parameters take priority. For any key not provided,
     the value is fetched from the cloud config endpoint (once, then cached).
+    For new-broker / migration keys, an SDK default constant is used as the
+    final fallback when neither the constructor nor cloud config provides it.
     """
 
-    _CLOUD_CONFIG_KEYS = ("rsa_public_key", "mqtt_host", "mqtt_port", "mqtt_use_tls")
+    _CLOUD_CONFIG_KEYS = (
+        "rsa_public_key",
+        "mqtt_host",
+        "mqtt_port",
+        "mqtt_use_tls",
+        "new_mqtt_host",
+        "new_mqtt_port",
+        "new_mqtt_use_tls",
+        "emqx_migration_query_url",
+    )
+
+    _SDK_DEFAULTS = {
+        "new_mqtt_host": NEW_MQTT_HOST,
+        "new_mqtt_port": NEW_MQTT_PORT,
+        "new_mqtt_use_tls": NEW_MQTT_USE_TLS,
+        "emqx_migration_query_url": EMQX_MIGRATION_QUERY_URL,
+    }
 
     def __init__(
         self,
@@ -22,6 +47,10 @@ class ConfigProvider:
         mqtt_host: str | None = None,
         mqtt_port: int | None = None,
         mqtt_use_tls: bool | None = None,
+        new_mqtt_host: str | None = None,
+        new_mqtt_port: int | None = None,
+        new_mqtt_use_tls: bool | None = None,
+        emqx_migration_query_url: str | None = None,
     ):
         self._overrides: dict = {
             "api_base_url": api_base_url,
@@ -29,18 +58,34 @@ class ConfigProvider:
             "mqtt_host": mqtt_host,
             "mqtt_port": mqtt_port,
             "mqtt_use_tls": mqtt_use_tls,
+            "new_mqtt_host": new_mqtt_host,
+            "new_mqtt_port": new_mqtt_port,
+            "new_mqtt_use_tls": new_mqtt_use_tls,
+            "emqx_migration_query_url": emqx_migration_query_url,
         }
         self._cloud_config: dict | None = None
 
     def get(self, key: str):
-        """Get a config value. Constructor param takes priority, else cloud config."""
+        """Get a config value: constructor param → cloud config → SDK default."""
         value = self._overrides.get(key)
         if value is not None:
             return value
 
         if key in self._CLOUD_CONFIG_KEYS:
-            cloud = self._get_cloud_config()
-            return cloud.get(key)
+            try:
+                cloud = self._get_cloud_config()
+                cloud_value = cloud.get(key)
+                if cloud_value is not None:
+                    return cloud_value
+            except YarboSDKError:
+                # Cloud config unavailable — fall through to SDK default if the
+                # key has one; otherwise re-raise so missing required keys
+                # (rsa_public_key / mqtt_host) still fail loudly.
+                if key not in self._SDK_DEFAULTS:
+                    raise
+
+        if key in self._SDK_DEFAULTS:
+            return self._SDK_DEFAULTS[key]
 
         return None
 

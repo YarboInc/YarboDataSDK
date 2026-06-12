@@ -90,3 +90,61 @@ class TestMissingApiBaseUrl:
         provider = ConfigProvider()
         with pytest.raises(YarboSDKError, match="api_base_url is required"):
             provider.get("mqtt_host")
+
+
+class TestNewBrokerThreeTierPriority:
+    """TC-117: new-broker fields resolve via constructor → cloud → SDK default."""
+
+    @responses.activate
+    def test_constructor_overrides_cloud_and_default(self):
+        responses.add(
+            responses.GET,
+            "https://api.yarbo.com/sdk/config",
+            json={**CLOUD_CONFIG_RESPONSE, "new_mqtt_host": "cloud.example.com"},
+        )
+        provider = ConfigProvider(
+            api_base_url="https://api.yarbo.com",
+            new_mqtt_host="ctor.example.com",
+        )
+        assert provider.get("new_mqtt_host") == "ctor.example.com"
+        assert len(responses.calls) == 0
+
+    @responses.activate
+    def test_cloud_overrides_default(self):
+        responses.add(
+            responses.GET,
+            "https://api.yarbo.com/sdk/config",
+            json={**CLOUD_CONFIG_RESPONSE, "new_mqtt_host": "cloud.example.com"},
+        )
+        provider = ConfigProvider(api_base_url="https://api.yarbo.com")
+        assert provider.get("new_mqtt_host") == "cloud.example.com"
+
+    @responses.activate
+    def test_falls_back_to_sdk_default_when_cloud_missing_key(self):
+        responses.add(
+            responses.GET,
+            "https://api.yarbo.com/sdk/config",
+            json=CLOUD_CONFIG_RESPONSE,  # no new_mqtt_host in cloud
+        )
+        provider = ConfigProvider(api_base_url="https://api.yarbo.com")
+        # SDK default is the production new EMQX Dedicated hostname.
+        assert provider.get("new_mqtt_host") == "c4750009.ala.dedicated.aws.emqxcloud.com"
+        assert provider.get("new_mqtt_port") == 8883
+        assert provider.get("new_mqtt_use_tls") is True
+        assert provider.get("emqx_migration_query_url").endswith(
+            "/yarbo/emqx-migration/query"
+        )
+
+    @responses.activate
+    def test_falls_back_to_sdk_default_when_cloud_unavailable(self):
+        """When /sdk/config fails, new-broker keys still resolve to SDK defaults."""
+        responses.add(
+            responses.GET,
+            "https://api.yarbo.com/sdk/config",
+            status=500,
+        )
+        provider = ConfigProvider(api_base_url="https://api.yarbo.com")
+        assert provider.get("new_mqtt_host") == "c4750009.ala.dedicated.aws.emqxcloud.com"
+        # Sanity: required-but-no-default key still propagates the error.
+        with pytest.raises(YarboSDKError, match="Failed to fetch cloud config"):
+            provider.get("rsa_public_key")

@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 DEVICES_DIR = Path(__file__).parent / "devices"
 
 VALID_ENTITY_TYPES = {"sensor", "binary_sensor", "device_tracker"}
-VALID_CONTROL_ENTITY_TYPES = {"select", "switch", "number"}
+VALID_CONTROL_ENTITY_TYPES = {"select", "switch", "number", "button"}
 
 
 @dataclass
@@ -133,6 +133,7 @@ def _parse_control_field(raw: dict, json_file: str) -> ControlFieldDefinition:
         icon=raw.get("icon"),
         enabled_by_default=raw.get("enabled_by_default", True),
         category=raw.get("category"),
+        compatible_head_types=raw.get("compatible_head_types"),
     )
 
 
