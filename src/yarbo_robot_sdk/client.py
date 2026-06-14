@@ -387,6 +387,25 @@ class YarboClient:
 
         self._ensure_mqtt_for(sn).subscribe(topic, _wrapper)
 
+    def subscribe_topic(
+        self,
+        sn: str,
+        topic: str,
+        callback: RawMqttCallback,
+    ) -> None:
+        """Subscribe to an arbitrary device topic on its MQTT connection.
+
+        Lower-level than the named subscribe_* helpers: the caller supplies the
+        full topic string and the callback receives the raw
+        ``(topic_str, payload_bytes)`` — no decoding. Use for device push
+        topics that have no dedicated helper (e.g. plan_feedback,
+        cloud_points_feedback).
+
+        Blocking (may open the per-device MQTT connection); in HA call via
+        async_add_executor_job.
+        """
+        self._ensure_mqtt_for(sn).subscribe(topic, callback)
+
     def request_with_feedback(
         self,
         sn: str,
