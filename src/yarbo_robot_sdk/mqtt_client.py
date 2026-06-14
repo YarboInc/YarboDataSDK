@@ -2,6 +2,7 @@
 
 import logging
 import secrets
+import threading
 import time as _time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -120,6 +121,13 @@ class MqttClient:
         )
         self._client: mqtt.Client | None = None
         self._callbacks: dict[str, list[Callable]] = {}
+        # Guards _callbacks. Mutated by subscribe()/unsubscribe() on caller
+        # (executor) threads, and iterated by _on_connect()/_on_message() on
+        # paho's network thread. Without this, a concurrent subscribe during a
+        # reconnect raised "dictionary changed size during iteration" and broke
+        # the connection. Snapshots are taken under the lock; callbacks run
+        # outside it so a callback may safely (re)subscribe.
+        self._callbacks_lock = threading.Lock()
         self._connected = False
 
     def connect(self) -> None:
@@ -195,11 +203,16 @@ class MqttClient:
         if self._client is None:
             raise MqttConnectionError("MQTT not connected. Call mqtt_connect() first.")
 
-        if topic not in self._callbacks:
-            self._callbacks[topic] = []
+        with self._callbacks_lock:
+            is_new = topic not in self._callbacks
+            if is_new:
+                self._callbacks[topic] = []
+            self._callbacks[topic].append(callback)
+        # Talk to the broker outside the lock so network I/O never blocks
+        # _on_message/_on_connect waiting on the same lock.
+        if is_new:
             self._client.subscribe(topic)
             logger.info("MQTT[%s] subscribe → %s", self._name, topic)
-        self._callbacks[topic].append(callback)
 
     def publish(self, topic: str, payload: bytes, qos: int = 0) -> None:
         """Publish a message to an MQTT topic.
@@ -222,7 +235,8 @@ class MqttClient:
             raise MqttConnectionError("MQTT not connected.")
 
         self._client.unsubscribe(topic)
-        self._callbacks.pop(topic, None)
+        with self._callbacks_lock:
+            self._callbacks.pop(topic, None)
 
     def disconnect(self) -> None:
         """Disconnect from MQTT broker."""
@@ -254,15 +268,17 @@ class MqttClient:
 
         if success:
             self._connected = True
+            with self._callbacks_lock:
+                topics = list(self._callbacks)
             logger.info(
                 "MQTT[%s] connected to %s:%s (rc=%s); re-subscribing %d topic(s)",
                 self._name,
                 self._host,
                 self._port,
                 rc,
-                len(self._callbacks),
+                len(topics),
             )
-            for topic in self._callbacks:
+            for topic in topics:
                 client.subscribe(topic)
         else:
             logger.warning(
@@ -309,7 +325,15 @@ class MqttClient:
         msg: mqtt.MQTTMessage,
     ) -> None:
         """Dispatch incoming message to matching topic callbacks."""
-        for registered_topic, callbacks in self._callbacks.items():
+        # Snapshot under the lock (copying each callback list too) so a
+        # concurrent subscribe()/unsubscribe() can't mutate what we iterate.
+        # Callbacks run outside the lock — they may re-subscribe.
+        with self._callbacks_lock:
+            snapshot = [
+                (topic, list(callbacks))
+                for topic, callbacks in self._callbacks.items()
+            ]
+        for registered_topic, callbacks in snapshot:
             if mqtt.topic_matches_sub(registered_topic, msg.topic):
                 for cb in callbacks:
                     cb(msg.topic, msg.payload)
