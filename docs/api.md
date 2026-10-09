@@ -1,55 +1,55 @@
 # API Reference
 
-## 文档说明
+## How to Use This Reference
 
-### 推荐用法 vs 底层兜底
+### Recommended API and Low-Level Fallback
 
-本文档中所有命令均提供两种调用方式：
+Commands can be sent in two ways:
 
-- **推荐用法**：使用 `client.device(device)` 返回的 `BoundYarboDevice` 对象，调用 typed 方法，无需关心底层细节。
-- **底层兜底**：直接使用 `mqtt_publish_command` 或 `publish_command`，需要手动传入 topic 名称和 payload，适用于 typed 方法未覆盖的命令或调试场景。
+- **Recommended:** Use typed methods on the `BoundYarboDevice` returned by `client.device(device)`. The SDK handles the lower-level details.
+- **Low-level fallback:** Use `mqtt_publish_command` or `publish_command` with an explicit topic name and payload for commands without typed methods or for debugging.
 
 ```python
-# 推荐用法
+# Recommended
 yarbo.mower.set_blade_height(60)
 
-# 底层兜底（typed 方法不满足时使用）
+# Low-level fallback for commands without a typed method
 yarbo.mower.publish_command("mower_target_cmd", {"target": 60})
 client.mqtt_publish_command(device.sn, device.type_id, "mower_target_cmd", {"target": 60})
 ```
 
-### 命令表格字段说明
+### Command Table Columns
 
-在 `BoundYarboDevice` 和 `YarboClient` 的命令表格中，各列含义如下：
+The `BoundYarboDevice` and `YarboClient` command tables use these columns:
 
-| 列名 | 含义 |
+| Column | Meaning |
 |------|------|
-| **Method** | typed 方法名，直接调用即可，SDK 自动组装 payload |
-| **MQTT topic** | 底层实际发送的 MQTT 命令名，发到 `snowbot/{sn}/app/{topic}` |
-| **Payload** | 底层 MQTT 消息的原始数据结构，使用 typed 方法时 SDK 自动构造，底层兜底时需手动传入 |
-| **Feedback** | `Yes` = 设备执行后会在 `data_feedback` 回一条确认消息，可用 `request_with_feedback` 等待；`No` = 发出后无回应，需主动调 `get_device_msg()` 查询最新状态 |
-| **Risk** | 操作风险等级：`Low` 无运动可逆 / `Medium` 改变运动或附件状态 / `High` 不可逆或修改安全配置 |
+| **Method** | Typed method name; the SDK constructs its payload |
+| **MQTT topic** | Command name sent to `snowbot/{sn}/app/{topic}` |
+| **Payload** | Raw MQTT message data; constructed by typed methods or supplied manually for low-level calls |
+| **Feedback** | `Yes`: the device confirms on `data_feedback`, and `request_with_feedback` can wait for it; `No`: call `get_device_msg()` to query the latest state |
+| **Risk** | `Low`: reversible without motion; `Medium`: changes motion or attachment state; `High`: irreversible or changes safety settings |
 
 ---
 
 ## Getting Started
 
-> **生命周期顺序总览**
+> **Lifecycle overview**
 >
-> 下面 6 步必须按顺序执行，跳步或乱序会导致难以调试的运行时错误：
+> Follow these six steps in order to avoid runtime errors:
 >
 > ```
-> 1. YarboClient()          ← 创建客户端
-> 2. login() / restore_session()  ← 认证（REST，不依赖 MQTT）
-> 3. get_devices()          ← 获取设备列表（REST）
-> 4. mqtt_connect()         ← 初始化 MQTT 路由器（lazy，不立即建连）
-> 5. subscribe_data_feedback()    ← 首个 subscribe_* 在此时按 SN 路由并建立对应 broker 连接
->    subscribe_device_message()   ← 实时状态推送（可选）
->    subscribe_heart_beat()       ← 心跳推送（可选）
+> 1. YarboClient()          ← create the client
+> 2. login() / restore_session()  ← authenticate over REST; MQTT not required
+> 3. get_devices()          ← get the device list over REST
+> 4. mqtt_connect()         ← initialize MQTT routing; no connection yet
+> 5. subscribe_data_feedback()    ← first subscription routes by SN and connects to its broker
+>    subscribe_device_message()   ← optional status updates
+>    subscribe_heart_beat()       ← optional heartbeat updates
 > 6. get_device_msg() / send commands / close()
 > ```
 >
-> **EMQX 顺切迁移期**：SDK 内部按 SN 路由到旧/新 EMQX broker（详见 [mqtt-topics.md](mqtt-topics.md)）。从用户视角看，调用顺序与以往完全一致，无需关心当前设备实际连在哪个集群上。
+> **During EMQX migration:** The SDK routes each serial number to the legacy or new broker (see [mqtt-topics.md](mqtt-topics.md)). The call order stays the same regardless of which cluster hosts a device.
 
 ### 1. Create a Client
 
@@ -189,7 +189,8 @@ client.close()
 
 ### 7. Reconnect on Drop
 
-MQTT 是长连接，网络波动时可能中断。断线后需重新调用 `mqtt_connect()`，并重新注册所有订阅——订阅关系不会自动恢复。
+MQTT connections may drop during network interruptions. Call `mqtt_connect()`
+again and register all subscriptions again; they are not restored automatically.
 
 ```python
 client.mqtt_connect()
@@ -200,14 +201,14 @@ yarbo.core.subscribe_heart_beat(on_heartbeat)
 
 ### 8. Error Handling
 
-SDK 共有以下几类异常，均继承自 `YarboSDKError`：
+All SDK exceptions below inherit from `YarboSDKError`:
 
-| 异常 | 触发场景 |
+| Exception | When raised |
 |------|---------|
-| `AuthenticationError` | 用户名或密码错误 |
-| `TokenExpiredError` | refresh token 过期，需重新登录 |
-| `APIError` | REST 请求返回非 2xx，含 `status_code` 属性 |
-| `MqttConnectionError` | MQTT 连接失败 |
+| `AuthenticationError` | Invalid username or password |
+| `TokenExpiredError` | Refresh token expired; log in again |
+| `APIError` | REST request returned a non-2xx status; includes `status_code` |
+| `MqttConnectionError` | MQTT connection failed |
 
 ```python
 from yarbo_robot_sdk.exceptions import (
@@ -220,15 +221,15 @@ try:
     client.mqtt_connect()
     yarbo.core.return_to_charge()
 except AuthenticationError:
-    print("用户名或密码错误")
+    print("Invalid username or password")
 except TokenExpiredError:
-    client.login("user@example.com", "password")  # 重新登录
+    client.login("user@example.com", "password")  # Log in again
 except MqttConnectionError as e:
-    print(f"MQTT 连接失败: {e}")
+    print(f"MQTT connection failed: {e}")
 except APIError as e:
-    print(f"REST 请求失败: HTTP {e.status_code}")
+    print(f"REST request failed: HTTP {e.status_code}")
 except YarboSDKError as e:
-    print(f"SDK 错误: {e}")  # 其余情况兜底
+    print(f"SDK error: {e}")  # Fallback for other SDK errors
 ```
 
 ---
@@ -288,7 +289,7 @@ Passing `data` (a DeviceMSG snapshot) enables SDK-side head-type validation for 
 | `clear_obstacle_zones()` | `ignore_obstacles` | `{"zone": []}` | No | High |
 | `wireless_charging_cmd(cmd=0)` | `wireless_charging_cmd` | `{"cmd": 0\|1}` | No | Medium |
 
-> `wireless_charging_cmd`: `cmd=0` 停止充电，`cmd=1` 开始充电。
+> `wireless_charging_cmd`: `cmd=0` stops charging; `cmd=1` starts charging.
 
 **Fallback:**
 

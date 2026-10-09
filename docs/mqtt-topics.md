@@ -1,10 +1,11 @@
 # MQTT Topics
 
-## 订阅实时数据
+## Subscribe to Real-Time Data
 
-### 设备状态（DeviceMSG）
+### Device Status (DeviceMSG)
 
-设备运行时持续推送，包含电量、位置、传感器、计划执行状态等完整信息。
+Published continuously while the device runs, including battery, position,
+sensor, and plan status information.
 
 ```python
 def on_status(topic, data):
@@ -14,83 +15,89 @@ def on_status(topic, data):
 yarbo.core.subscribe_device_message(on_status)
 ```
 
-> **底层写法**：`client.subscribe_device_message(device.sn, device.type_id, on_status)`
+> **Low-level API:** `client.subscribe_device_message(device.sn, device.type_id, on_status)`
 
 ---
 
-### 心跳（HeartBeat）
+### Heartbeat (HeartBeat)
 
-定期推送（约每 30 秒），用于判断设备是否在线。
+Published approximately every 30 seconds to indicate whether the device is online.
 
 ```python
 yarbo.core.subscribe_heart_beat(on_heartbeat)
 ```
 
-> **底层写法**：`client.subscribe_heart_beat(device.sn, device.type_id, on_heartbeat)`
+> **Low-level API:** `client.subscribe_heart_beat(device.sn, device.type_id, on_heartbeat)`
 
 ---
 
-### 命令反馈（data_feedback）
+### Command Feedback (data_feedback)
 
-`get_device_msg`、`read_all_plan` 等数据请求的响应通道。**必须在发起任何数据请求之前订阅。**
+Response channel for data requests such as `get_device_msg` and
+`read_all_plan`. **Subscribe before making any data request.**
 
 ```python
 yarbo.core.subscribe_data_feedback(on_feedback)
 ```
 
-> **底层写法**：`client.subscribe_data_feedback(device.sn, device.type_id, on_feedback)`  
-> 不传 `on_feedback` 时，SDK 内部仍会处理响应用于同步等待，仅在需要自定义处理时传入回调。
+> **Low-level API:** `client.subscribe_data_feedback(device.sn, device.type_id, on_feedback)`
+> Without `on_feedback`, the SDK still processes responses for synchronous
+> requests. Pass a callback only when custom handling is needed.
 
 ---
 
-## Topic 地址
+## Topic Addresses
 
-| 名称 | Topic |
+| Name | Topic |
 |------|-------|
 | DeviceMSG | `snowbot/{sn}/device/DeviceMSG` |
 | HeartBeat | `snowbot/{sn}/device/heart_beat` |
 | data_feedback | `snowbot/{sn}/device/data_feedback` |
-| 命令下发 | `snowbot/{sn}/app/{command}` |
+| Command publishing | `snowbot/{sn}/app/{command}` |
 
 ---
 
-## 数据压缩
+## Data Compression
 
-固件 >= 3.9.0 的设备会对 MQTT payload 进行 zlib 压缩，SDK 自动处理压缩与解压，无需额外操作。
+Devices running firmware 3.9.0 or later compress MQTT payloads with zlib.
+The SDK compresses and decompresses them automatically.
 
 ---
 
-## EMQX 迁移期连接策略
+## Connection Strategy During EMQX Migration
 
-为配合 EMQX 共享集群向 EMQX Dedicated 集群顺切迁移，SDK 在内部按 **SN 维度** 自动选择 broker：
+As devices move from the shared EMQX cluster to EMQX Dedicated, the SDK chooses
+a broker for each **serial number (SN)**:
 
-- 调用任意 `subscribe_*(sn, ...)` 或 `mqtt_publish_command(sn, ...)` 时，SDK 先查询 `GET /yarbo/emqx-migration/query?sn=<SN>`（携带 `Authorization: Bearer <JWT>`）
-- 若返回 `migrated=true` → 设备已迁移，连接到新 EMQX Dedicated 集群
-- 若返回 `migrated=false` → 设备未迁移，连接到旧共享集群
-- 两类设备同时存在时，SDK 同时维护两条物理连接，最多两条
+- On `subscribe_*(sn, ...)` or `mqtt_publish_command(sn, ...)`, the SDK calls `GET /yarbo/emqx-migration/query?sn=<SN>` with `Authorization: Bearer <JWT>`.
+- `migrated=true` routes the device to EMQX Dedicated.
+- `migrated=false` routes the device to the legacy shared cluster.
+- When both device types are present, the SDK maintains up to two broker connections.
 
-### 两个 broker 的连接形态
+### Broker Connection Settings
 
-| 维度 | 旧集群（未迁移设备） | 新 EMQX Dedicated（已迁移设备） |
+| Setting | Legacy cluster (unmigrated devices) | EMQX Dedicated (migrated devices) |
 |------|-------------------|------------------------------|
-| Host | 由 `/sdk/config` 提供（默认 `t9db1d91.us-east-1.emqx.cloud:15525`）| `c4750009.ala.dedicated.aws.emqxcloud.com:8883` |
-| TLS | 启用 | 启用，与旧集群相同的系统 CA |
+| Host | Supplied by `/sdk/config` (default: `t9db1d91.us-east-1.emqx.cloud:15525`) | `c4750009.ala.dedicated.aws.emqxcloud.com:8883` |
+| TLS | Enabled | Enabled, using the same system CA |
 | ClientID | `HA_{email}_{unix_ts}` | `HA_{email}_{rand4}` |
 | username | JWT | email |
 | password | `""` | JWT |
 
-### 行为细节
+### Connection Behavior
 
-- `client.mqtt_connect()` 是 **lazy** 的：调用本身不发起网络通信，等到第一个 `subscribe_*(sn,...)` 或 `mqtt_publish_command(sn,...)` 时才建立对应 broker 的连接
-- 新 broker 建连前 SDK 主动调一次 `auth.refresh()`，避免 EMQX 因 token 过期拒绝认证；已经建立的连接不主动干预
-- 任意 broker 断线（`_on_disconnect` 触发）后，SDK 清空所有 SN 的迁移状态缓存——下次订阅 / 发布会重新查询，自动覆盖"断线期间设备发生迁移"的情况
-- `migration query` 用当前 JWT 鉴权；若 token 失效（HTTP 401 或 `success=false` 且 `code=A0230`），SDK 自动 `auth.refresh()` 并重试一次（恢复的存量 token 可能已过期）。刷新失败抛 `TokenExpiredError`，由宿主（HA）驱动重新登录
-- `migration query` 失败（HTTP 非 2xx / `success=false` / 网络异常）一律抛 `YarboSDKError`，**不静默回退** —— 静默回退会导致已迁移设备连到旧 broker 后收不到数据
-- 路由配置参数（`new_mqtt_host` / `new_mqtt_port` / `new_mqtt_use_tls` / `emqx_migration_query_url`）支持三级优先级：构造参数 → `/sdk/config` 云端 → SDK 内嵌默认值
+- `client.mqtt_connect()` is **lazy**: it makes no network request until the first `subscribe_*(sn, ...)` or `mqtt_publish_command(sn, ...)` call needs a broker connection.
+- Before connecting to the new broker, the SDK calls `auth.refresh()` to avoid rejection due to an expired token. Existing connections are left alone.
+- After either broker disconnects (`_on_disconnect`), the SDK clears the migration cache for every SN. The next subscription or command queries again, including for devices migrated during the disconnection.
+- The migration query uses the current JWT. On HTTP 401, or `success=false` with `code=A0230`, the SDK calls `auth.refresh()` and retries once. If refresh fails, it raises `TokenExpiredError` so the host (HA) can prompt for login.
+- On any other migration query failure (non-2xx HTTP status, `success=false`, or network error), the SDK raises `YarboSDKError`. It does **not** silently use the legacy broker, which could leave migrated devices without data.
+- Routing settings (`new_mqtt_host`, `new_mqtt_port`, `new_mqtt_use_tls`, `emqx_migration_query_url`) follow this priority: constructor arguments → `/sdk/config` response → SDK built-in defaults.
 
-### 日志区分 broker
+### Broker-Specific Logs
 
-每个 `MqttClient` 实例带一个 broker 标签（`legacy` / `new`），连接相关日志统一以 `MQTT[<label>]` 前缀输出，便于在两个 broker 并存时区分某条连接 / 订阅属于哪个集群；路由判定单独打一行 `MQTT route`。关键事件均为 `info` 级：
+Each `MqttClient` has a `legacy` or `new` broker label. Connection logs use
+the `MQTT[<label>]` prefix; routing decisions use `MQTT route`. Key events are
+logged at the `info` level:
 
 ```
 MQTT route sn=<SN> -> new broker
@@ -100,7 +107,8 @@ MQTT[new] subscribe → snowbot/<SN>/device/DeviceMSG
 MQTT[new] disconnected from <host>:<port> (rc=...)
 ```
 
-未迁移设备对应 `MQTT[legacy] ...` 及旧集群 host。开启方式（HA）：
+Unmigrated devices use `MQTT[legacy] ...` and the legacy host. Enable these
+logs in HA with:
 
 ```yaml
 logger:
@@ -109,4 +117,5 @@ logger:
     yarbo_robot_sdk.mqtt_client: info
 ```
 
-迁移完成后，路由器层和迁移查询调用会作为单独工单清理。
+After migration completes, the routing layer and migration query calls will
+be removed in a separate change.

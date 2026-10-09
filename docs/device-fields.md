@@ -1,169 +1,170 @@
 # Device Fields
 
-## 如何访问
+## Accessing Fields
 
 ```python
 from yarbo_robot_sdk import get_field_definitions, get_control_field_definitions, extract_field
 
-# 遍历所有监控字段
+# List all monitored fields
 for f in get_field_definitions("yarbo_Y"):
     print(f"{f.name} ({f.entity_type}): {f.path}")
 
-# 遍历所有控制字段
+# List all control fields
 for c in get_control_field_definitions("yarbo_Y"):
     print(f"{c.name} ({c.entity_type}): {c.path}")
 
-# 从设备状态中提取具体字段值
+# Extract specific values from a device snapshot
 battery = extract_field(snapshot, "BatteryMSG.capacity")   # → 85
 head    = extract_field(snapshot, "HeadMsg.head_type")      # → 3
 ```
 
 ---
 
-## Yarbo Y Series — 监控数据
+## Yarbo Y Series — Monitored Data
 
-### 电池
+### Battery
 
-| 字段路径 | 名称 | 类型 | 单位 | 说明 |
-|---------|------|------|------|------|
-| `BatteryMSG.capacity` | Battery | sensor | % | 电池电量 |
-| `BatteryMSG.voltage` | Battery Voltage | sensor | V | 电池电压（默认禁用）|
-| `BatteryMSG.current` | Battery Current | sensor | A | 电池电流（默认禁用）|
-| `BatteryMSG.health` | Battery Health | sensor | % | 电池健康度 |
-| `BatteryMSG.temperature1` | Battery Cell Temperature 1 | sensor | °C | 电芯温度 1（默认禁用）|
-| `BatteryMSG.temperature2` | Battery Cell Temperature 2 | sensor | °C | 电芯温度 2（默认禁用）|
-| `BatteryMSG.temperature3` | Battery Cell Temperature 3 | sensor | °C | 电芯温度 3（默认禁用）|
-| `BatteryMSG.temperature4` | Battery Cell Temperature 4 | sensor | °C | 电芯温度 4（默认禁用）|
-| `BatteryMSG.temperature5` | Battery Cell Temperature 5 | sensor | °C | 电芯温度 5（默认禁用）|
-| `BatteryMSG.temperature6` | Battery Cell Temperature 6 | sensor | °C | 电芯温度 6（默认禁用）|
-| `__computed__.charging_power` | Charging Power | sensor | W | 充电功率，计算值（默认禁用）|
-| `BatteryMSG.status` | Charging | binary_sensor | — | 是否正在充电 |
-| `BatteryMSG.temp_err` | Battery Temp Error | binary_sensor | — | 电池温度异常 |
+| Field path | Name | Type | Unit | Description |
+|------------|------|------|------|-------------|
+| `BatteryMSG.capacity` | Battery | sensor | % | Battery level |
+| `BatteryMSG.voltage` | Battery Voltage | sensor | V | Battery voltage (disabled by default) |
+| `BatteryMSG.current` | Battery Current | sensor | A | Battery current (disabled by default) |
+| `BatteryMSG.health` | Battery Health | sensor | % | Battery health |
+| `BatteryMSG.temperature1` | Battery Cell Temperature 1 | sensor | °C | Cell temperature 1 (disabled by default) |
+| `BatteryMSG.temperature2` | Battery Cell Temperature 2 | sensor | °C | Cell temperature 2 (disabled by default) |
+| `BatteryMSG.temperature3` | Battery Cell Temperature 3 | sensor | °C | Cell temperature 3 (disabled by default) |
+| `BatteryMSG.temperature4` | Battery Cell Temperature 4 | sensor | °C | Cell temperature 4 (disabled by default) |
+| `BatteryMSG.temperature5` | Battery Cell Temperature 5 | sensor | °C | Cell temperature 5 (disabled by default) |
+| `BatteryMSG.temperature6` | Battery Cell Temperature 6 | sensor | °C | Cell temperature 6 (disabled by default) |
+| `__computed__.charging_power` | Charging Power | sensor | W | Computed charging power (disabled by default) |
+| `BatteryMSG.status` | Charging | binary_sensor | — | Whether the battery is charging |
+| `BatteryMSG.temp_err` | Battery Temp Error | binary_sensor | — | Battery temperature fault |
 
-### 状态
+### Status
 
-| 字段路径 | 名称 | 类型 | 说明 |
-|---------|------|------|------|
-| `StateMSG.working_state` | Activity | sensor | 工作状态：`standby` / `working` |
-| `HeartBeatMSG.working_state` | Heart Beat State | sensor | 心跳携带的工作状态：`standby` / `working` |
-| `StateMSG.error_code` | Error Code | sensor | 当前错误码（0 = 正常）|
-| `HeadAndVersionCheck.head_firmware_version` | Head Firmware Version | sensor | 附件头固件版本 |
-| `BodyVersionMsg.body_fw_version` | Body Firmware Version | sensor | 机身固件版本 |
-| `StateMSG.stuck` | Stuck | binary_sensor | 设备是否卡住 |
-| `StateMSG.obstacle` | Obstacle Detected | binary_sensor | 是否检测到障碍物（默认禁用）|
-| `StateMSG.person_detect_status` | Person Detection | binary_sensor | 是否检测到人员 |
-| `StateMSG.robot_follow_state` | Follow Mode | binary_sensor | 是否处于跟随模式 |
+| Field path | Name | Type | Description |
+|------------|------|------|-------------|
+| `StateMSG.working_state` | Activity | sensor | Working state: `standby` / `working` |
+| `HeartBeatMSG.working_state` | Heart Beat State | sensor | Working state from the heartbeat: `standby` / `working` |
+| `StateMSG.error_code` | Error Code | sensor | Current error code (0 = normal) |
+| `HeadAndVersionCheck.head_firmware_version` | Head Firmware Version | sensor | Attachment firmware version |
+| `BodyVersionMsg.body_fw_version` | Body Firmware Version | sensor | Robot body firmware version |
+| `StateMSG.stuck` | Stuck | binary_sensor | Whether the robot is stuck |
+| `StateMSG.obstacle` | Obstacle Detected | binary_sensor | Whether an obstacle was detected (disabled by default) |
+| `StateMSG.person_detect_status` | Person Detection | binary_sensor | Whether a person was detected |
+| `StateMSG.robot_follow_state` | Follow Mode | binary_sensor | Whether follow mode is active |
 
-### 计划与充电
+### Plans and Charging
 
-| 字段路径 | 名称 | 类型 | 说明 |
-|---------|------|------|------|
-| `StateMSG.on_going_planning` | Auto Plan Status | sensor | 计划执行状态，含详细错误码（WP002–WP025）|
-| `StateMSG.on_going_planning` | Problem | binary_sensor | 计划是否存在错误 |
-| `StateMSG.planning_paused` | Auto Plan Pause Status | sensor | 暂停原因：`Manual Pause` / `Low Battery Recharging` / `Stuck` 等 |
-| `StateMSG.on_going_recharging` | Recharging Status | sensor | 返回充电状态，含详细错误码（REC005 等）|
+| Field path | Name | Type | Description |
+|------------|------|------|-------------|
+| `StateMSG.on_going_planning` | Auto Plan Status | sensor | Plan execution status, including detailed error codes (WP002–WP025) |
+| `StateMSG.on_going_planning` | Problem | binary_sensor | Whether the plan has an error |
+| `StateMSG.planning_paused` | Auto Plan Pause Status | sensor | Pause reason, such as `Manual Pause`, `Low Battery Recharging`, or `Stuck` |
+| `StateMSG.on_going_recharging` | Recharging Status | sensor | Return-to-charge status, including detailed error codes such as REC005 |
 
-### 网络
+### Network
 
-| 字段路径 | 名称 | 类型 | 单位 | 说明 |
-|---------|------|------|------|------|
-| `WifiInfo.signal` | WiFi RSSI | sensor | dBm | Wi-Fi 信号强度 |
-| `net_module_status.lte_rssi` | 4G RSSI | sensor | dBm | 4G 信号强度 |
-| `halow_status.strength` | HaLow RSSI | sensor | dBm | HaLow 信号强度（默认禁用）|
-| `route_priority` | Network | sensor | — | 当前活跃网络：`Halow` / `Wifi` / `4G` |
+| Field path | Name | Type | Unit | Description |
+|------------|------|------|------|-------------|
+| `WifiInfo.signal` | WiFi RSSI | sensor | dBm | Wi-Fi signal strength |
+| `net_module_status.lte_rssi` | 4G RSSI | sensor | dBm | 4G signal strength |
+| `halow_status.strength` | HaLow RSSI | sensor | dBm | HaLow signal strength (disabled by default) |
+| `route_priority` | Network | sensor | — | Active network: `Halow` / `Wifi` / `4G` |
 
-### 附件头
+### Attachment
 
-| 字段路径 | 名称 | 类型 | 说明 |
-|---------|------|------|------|
-| `HeadMsg.head_type` | Head Type | sensor | 当前附件类型：`None(0)` / `Snow Blower(1)` / `Blower(2)` / `Mower(3)` / `Smart Cover(4)` / `Mower Pro(5)` |
-| `HeadSerialMsg.head_sn` | Head Serial Number | sensor | 附件序列号 |
+| Field path | Name | Type | Description |
+|------------|------|------|-------------|
+| `HeadMsg.head_type` | Head Type | sensor | Current attachment: `None(0)` / `Snow Blower(1)` / `Blower(2)` / `Mower(3)` / `Smart Cover(4)` / `Mower Pro(5)` |
+| `HeadSerialMsg.head_sn` | Head Serial Number | sensor | Attachment serial number |
 
-### 声音与灯光
+### Sound and Lights
 
-| 字段路径 | 名称 | 类型 | 说明 |
-|---------|------|------|------|
-| `StateMSG.enable_sound` | Sound Enabled | binary_sensor | 声音是否开启 |
-| `StateMSG.volume` | Volume | sensor | 当前音量（%）|
-| `LedInfoMSG.led_head` | Head Light | binary_sensor | 车头灯是否开启 |
+| Field path | Name | Type | Description |
+|------------|------|------|-------------|
+| `StateMSG.enable_sound` | Sound Enabled | binary_sensor | Whether sound is enabled |
+| `StateMSG.volume` | Volume | sensor | Current volume (%) |
+| `LedInfoMSG.led_head` | Head Light | binary_sensor | Whether the headlight is on |
 
-### 位置
+### Position
 
-| 字段路径 | 名称 | 类型 | 单位 | 说明 |
-|---------|------|------|------|------|
-| `CombinedOdom.x` | Position X | sensor | m | 设备本地坐标 X（默认禁用）|
-| `CombinedOdom.y` | Position Y | sensor | m | 设备本地坐标 Y（默认禁用）|
-| `CombinedOdom.phi` | Heading | sensor | ° | 设备朝向角（默认禁用）|
-| `RTKMSG.status` | RTK Signal | sensor | — | GPS 信号质量：`Strong` / `Medium` / `Weak` |
-| `RTKMSG.sat_num` | GPS Satellites | sensor | — | 当前使用的 GPS 卫星数量（默认禁用）|
+| Field path | Name | Type | Unit | Description |
+|------------|------|------|------|-------------|
+| `CombinedOdom.x` | Position X | sensor | m | Device-local X coordinate (disabled by default) |
+| `CombinedOdom.y` | Position Y | sensor | m | Device-local Y coordinate (disabled by default) |
+| `CombinedOdom.phi` | Heading | sensor | ° | Robot heading (disabled by default) |
+| `RTKMSG.status` | RTK Signal | sensor | — | GPS signal quality: `Strong` / `Medium` / `Weak` |
+| `RTKMSG.sat_num` | GPS Satellites | sensor | — | Number of GPS satellites in use (disabled by default) |
 
-### 环境
+### Environment
 
-| 字段路径 | 名称 | 类型 | 单位 | 说明 |
-|---------|------|------|------|------|
-| `EletricMSG.body_ambient_ntc_temp` | Ambient Temperature | sensor | °C | 机身环境温度 |
-| `RunningStatusMSG.rain_sensor_data` | Rain Sensor | sensor | — | 雨量传感器原始数据（默认禁用）|
-| `mower_head_info01.rain_sensor` | Rain Detected | binary_sensor | — | 是否检测到降雨 |
-
----
-
-## Yarbo Y Series — 控制字段
-
-### 运动控制
-
-| 名称 | 类型 | MQTT Topic | 说明 |
-|------|------|-----------|------|
-| Working State | select | `set_working_state` | 工作状态切换：`standby(0)` / `working(1)` |
-
-### 声音
-
-| 名称 | 类型 | MQTT Topic | 说明 |
-|------|------|-----------|------|
-| Sound Switch | switch | `set_sound_param` | 声音开关 |
-| Volume | number (0–100%) | `set_sound_param` | 音量调节 |
-| Play Sound | button | `song_cmd` | 播放定位音效 |
-
-### 灯光
-
-| 名称 | 类型 | MQTT Topic | 说明 |
-|------|------|-----------|------|
-| Head Light | switch | `light_ctrl` | 车头灯开关 |
-
-### 安全
-
-| 名称 | 类型 | MQTT Topic | 说明 |
-|------|------|-----------|------|
-| Person Detection | switch | `set_person_detect` | 人员检测开关（默认禁用）|
-| Follow Mode | switch | `set_follow_state` | 跟随模式开关（默认禁用）|
-| Child Lock | switch | `set_child_lock` | 童锁开关 |
-| Geo Fence | switch | `save_global_params` | 电子围栏开关（默认禁用）|
-| Ignore Obstacles | switch | `set_map_obstacle_switch` | 忽略障碍物开关（默认禁用）|
-| Ignore Obstacle Zones | button | `ignore_obstacles` | 清除所有障碍区域（默认禁用）|
-| Emergency Stop | button | `stop` | 紧急停止 |
-
-### 割草头（head_type 3 / 5）
-
-| 名称 | 类型 | MQTT Topic | 范围 | 说明 |
-|------|------|-----------|------|------|
-| Blade Height | number | `mower_target_cmd` | 20–100 mm | 刀片目标高度（默认禁用）|
-| Blade Speed | number | `mower_speed_cmd` | 0–100% | 刀片转速（默认禁用）|
-
-### 除雪头（head_type 1）
-
-| 名称 | 类型 | MQTT Topic | 范围 | 说明 |
-|------|------|-----------|------|------|
-| Chute Angle | number | `cmd_set_chute_angle` | 0–180° | 导雪管角度（默认禁用）|
+| Field path | Name | Type | Unit | Description |
+|------------|------|------|------|-------------|
+| `EletricMSG.body_ambient_ntc_temp` | Ambient Temperature | sensor | °C | Ambient temperature around the robot body |
+| `RunningStatusMSG.rain_sensor_data` | Rain Sensor | sensor | — | Raw rain sensor reading (disabled by default) |
+| `mower_head_info01.rain_sensor` | Rain Detected | binary_sensor | — | Whether rain was detected |
 
 ---
 
-## 按需拉取的数据
+## Yarbo Y Series — Control Fields
 
-以下数据不通过实时推送获取，需主动发起请求：
+### Motion Control
 
-| 数据 | SDK 方法 | 说明 |
-|------|---------|------|
-| 完整设备状态 | `yarbo.core.get_device_msg()` | 所有字段的完整快照 |
-| 自动计划列表 | `yarbo.core.read_all_plan()` | 所有已配置的自动计划 |
-| GPS 参考原点 | `yarbo.core.read_gps_ref()` | 用于本地坐标转 GPS 经纬度 |
-| 地图数据 | `yarbo.core.get_map()` | 工作区域、路径、充电站、禁区 |
-| Wi-Fi 信息 | `yarbo.core.get_connect_wifi_name()` | 当前连接的 Wi-Fi 名称与信号 |
+| Name | Type | MQTT Topic | Description |
+|------|------|------------|-------------|
+| Working State | select | `set_working_state` | Switch working state: `standby(0)` / `working(1)` |
+
+### Sound
+
+| Name | Type | MQTT Topic | Description |
+|------|------|------------|-------------|
+| Sound Switch | switch | `set_sound_param` | Toggle sound |
+| Volume | number (0–100%) | `set_sound_param` | Adjust volume |
+| Play Sound | button | `song_cmd` | Play a locating sound |
+
+### Lights
+
+| Name | Type | MQTT Topic | Description |
+|------|------|------------|-------------|
+| Head Light | switch | `light_ctrl` | Toggle the headlight |
+
+### Safety
+
+| Name | Type | MQTT Topic | Description |
+|------|------|------------|-------------|
+| Person Detection | switch | `set_person_detect` | Toggle person detection (disabled by default) |
+| Follow Mode | switch | `set_follow_state` | Toggle follow mode (disabled by default) |
+| Child Lock | switch | `set_child_lock` | Toggle child lock |
+| Geo Fence | switch | `save_global_params` | Toggle the electronic fence (disabled by default) |
+| Ignore Obstacles | switch | `set_map_obstacle_switch` | Toggle obstacle ignoring (disabled by default) |
+| Ignore Obstacle Zones | button | `ignore_obstacles` | Clear all obstacle zones (disabled by default) |
+| Emergency Stop | button | `stop` | Stop immediately |
+
+### Mower (head_type 3 / 5)
+
+| Name | Type | MQTT Topic | Range | Description |
+|------|------|------------|-------|-------------|
+| Blade Height | number | `mower_target_cmd` | 20–100 mm | Target blade height (disabled by default) |
+| Blade Speed | number | `mower_speed_cmd` | 0–100% | Blade speed (disabled by default) |
+
+### Snow Blower (head_type 1)
+
+| Name | Type | MQTT Topic | Range | Description |
+|------|------|------------|-------|-------------|
+| Chute Angle | number | `cmd_set_chute_angle` | 0–180° | Chute angle (disabled by default) |
+
+---
+
+## Data Requested On Demand
+
+The following data is requested explicitly rather than received through
+real-time updates:
+
+| Data | SDK method | Description |
+|------|------------|-------------|
+| Full device status | `yarbo.core.get_device_msg()` | Complete snapshot of all fields |
+| Automatic plans | `yarbo.core.read_all_plan()` | All configured automatic plans |
+| GPS reference origin | `yarbo.core.read_gps_ref()` | Converts local coordinates to GPS latitude/longitude |
+| Map data | `yarbo.core.get_map()` | Work areas, pathways, charging station, and restricted zones |
+| Wi-Fi information | `yarbo.core.get_connect_wifi_name()` | Connected Wi-Fi name and signal |
